@@ -53,6 +53,15 @@
   const logEl = $('log'), lineEl = $('line'), candsEl = $('cands'),
         statusEl = $('status'), tokensEl = $('tokens');
 
+  // ★何も起きないときに何も分からないのが一番困るので、最後の出来事を出す
+  let diagOn = false;
+  const diag = (what, detail) => {
+    if (!diagOn) return;
+    tokensEl.textContent = `${what}: ${detail}`;
+  };
+  addEventListener('error', (e) => { statusEl.textContent = 'エラー: ' + e.message; });
+  addEventListener('unhandledrejection', (e) => { statusEl.textContent = '未処理の失敗: ' + e.reason; });
+
   const write = (text, cls) => {
     const div = document.createElement('div');
     div.className = cls; div.textContent = text;
@@ -74,8 +83,12 @@
     if (!text.trim()) return;
     write('> ' + text, 'you');
     const tokenized = wk.split(text);
-    tokensEl.textContent = '[' + tokenized + ']';
-    write(tsunagi(await eliza.response(tokenized)), 'doc');
+    diag('tokens', tokenized);
+    try {
+      write(tsunagi(await eliza.response(tokenized)), 'doc');
+    } catch (err) {
+      statusEl.textContent = 'ELIZA でエラー: ' + err;   // ★沈黙させない
+    }
   }
 
   // ---- hechima（日本語入力）----
@@ -129,10 +142,10 @@
     show(segs) { render(segs); renderCands(segs); },
     hide()     { render([]); candsEl.textContent = ''; },
     commit(text) { buffer += text; render([]); candsEl.textContent = ''; },
-    hostKey(name) {
-      if (name === 'Enter') { const t = buffer; buffer = ''; render([]); say(t); }
-      else if (name === 'Backspace') { buffer = buffer.slice(0, -1); render([]); }
-    },
+    // ★hostKey は「バッファが空のときの編集キー」の橋渡し口で、例は ArrowLeft / Backspace。
+    //   ★Enter はここに来ない（builtinNav が composing() 無しなら false を返して素通しにする）。
+    //   なので送信は keydown 側で拾う。BS もそちらに一本化した。
+    hostKey(name) { diag('hostKey', name); if (name === 'Backspace') backspace(); },
     ...conn.callbacks(),
   });
   fep.setActive(true);
@@ -147,8 +160,31 @@
     statusEl.textContent = '配列の読み込みに失敗（内蔵ローマ字で続行）: ' + e.message;
   }
 
-  addEventListener('keydown', (e) => { if (fep.feed(e)) e.preventDefault(); });
-  addEventListener('keyup',   (e) => { fep.feedUp(e); });
+  function backspace() { buffer = buffer.slice(0, -1); render([]); }
+
+  addEventListener('keydown', (e) => {
+    let eaten = false;
+    try {
+      eaten = fep.feed(e);
+    } catch (err) {
+      diag('feed 例外', String(err));   // ★沈黙させない
+    }
+    diag('keydown', `${e.key} eaten=${eaten}`);
+    if (eaten) { e.preventDefault(); return; }
+    // ★fep が飲まなかったキーはこちらの責任。Enter がここに落ちてくる。
+    if (e.key === 'Enter' && !e.isComposing) {
+      e.preventDefault();
+      const t = buffer; buffer = ''; render([]);
+      say(t).catch((err) => diag('say 例外', String(err)));
+    } else if (e.key === 'Backspace') {
+      e.preventDefault(); backspace();
+    }
+  });
+  addEventListener('keyup', (e) => { try { fep.feedUp(e); } catch (err) { diag('feedUp 例外', String(err)); } });
+
+  addEventListener('keydown', (e) => {
+    if (e.key === 'F2') { diagOn = !diagOn; tokensEl.textContent = diagOn ? '診断 ON（F2 で切替）' : ''; }
+  });
 
   ready.then((info) => {
     statusEl.textContent = 'ローマ字で打てます。Enter で送信。'
