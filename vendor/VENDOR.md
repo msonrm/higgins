@@ -40,6 +40,33 @@
 著者自身の文章と原典の転記なので残してある。
 `.gitignore` にも門を作ってあるので、再 clone しても入ってこない。
 
+
+## `web/vendor/hechima/` ほか —— hechima（日本語入力）
+
+Web 版で日本語を打つための一式。**自作部分 MIT / 変換エンジンは powered by Mozc**。
+
+- ★**版の正典は hechima repo の `site/public/vendor/VENDOR.md`**。ここはその pin であって、
+  版の説明を二重に書かない（同じ制約を 2 か所に書くと片方が必ず腐る）
+- ★**手でコピーしない**。差し替えるときも `tools/vendor_hechima.sh` を通す
+- 取り込んだ実体の md5 を下に焼いてあるので、上流と照合できる
+  （hechima ではデプロイ伝播ラグを `?cb=` で見抜けず md5 照合が要った実績がある）
+
+取得元: `~/development/hechima/site/public/vendor/`（`msonrm/hechima` = public）
+取り込み: 2026-08-28
+
+| ファイル | サイズ | md5 |
+|---|---|---|
+| `hechima/hechima.js` | 36K | `6edca13c85c8d0ee1809a5646c521afd` |
+| `hechima/hechima-worker.js` | 16K | `a5daac0e70ea5f18349c6e7848980c4b` |
+| `hechima/hechima.d.ts` | 24K | `97a32687842588c785af07eaa0bcb119` |
+| `hechima-wasm/hechima-wasm.js` | 80K | `193697d14172ac60945550c40c214548` |
+| `hechima-wasm/hechima-wasm.wasm` | 2.6M | `7b56ad80cc5d605f44e684d7b80a0f52` |
+| `hechima-wasm/mozc.data` | 19M | `c40baaba995e6f4bb3fcf5df420eec04` |
+| `keymap-engine/keymap-engine.js` | 148K | `747cc09b1f7faa6034b869c0da96e07d` |
+| `keymaps/romaji.json` | 4.0K | `3830e768f85c841dc1b7f8ac540a7d33` |
+
+`mozc.data` は Mozc の辞書。**名前と帰属を保つため改名しない**（上流の指示）。
+
 ### ★使わないもの
 
 - **Harold Garfinkel Archive の実会話記録** —— ★**CC0 ではない**（Anne Warfield Rawls が

@@ -7,58 +7,69 @@
 <style>
   :root { color-scheme: light dark; }
   body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 0 auto;
-         padding: 1rem; line-height: 1.7; }
-  h1 { font-size: 1.1rem; font-weight: 600; }
-  h1 small { font-weight: 400; opacity: .7; display: block; font-size: .8rem; }
-  #log { min-height: 20rem; white-space: pre-wrap; }
-  #log .you { opacity: .65; }
+         padding: 1rem 1rem 6rem; line-height: 1.8; }
+  h1 { font-size: 1.05rem; font-weight: 600; margin-bottom: .2rem; }
+  h1 small { font-weight: 400; opacity: .65; display: block; font-size: .78rem; line-height: 1.5; }
+  #log > div { margin: .35rem 0; }
+  #log .you { opacity: .6; }
   #log .doc { font-weight: 500; }
-  form { display: flex; gap: .5rem; margin-top: 1rem; }
-  input { flex: 1; font: inherit; padding: .5rem; }
-  button { font: inherit; padding: .5rem 1rem; }
-  #tokens { font-size: .75rem; opacity: .5; font-family: ui-monospace, monospace; }
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; background: Canvas;
+         border-top: 1px solid color-mix(in srgb, CanvasText 20%, transparent);
+         padding: .7rem 1rem; }
+  #bar .inner { max-width: 42rem; margin: 0 auto; }
+  #line { min-height: 1.8em; font-size: 1.05rem; }
+  #line .composing { text-decoration: underline; text-underline-offset: .25em; }
+  #line .focus { text-decoration: underline; text-decoration-thickness: 2px; }
+  #line .caret { border-left: 2px solid currentColor; margin-left: 1px; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0 } }
+  #cands { font-size: .85rem; opacity: .8; min-height: 1.4em; }
+  #cands b { font-weight: 600; text-decoration: underline; }
+  #status { font-size: .75rem; opacity: .55; }
+  #tokens { font-size: .72rem; opacity: .45; font-family: ui-monospace, monospace; }
 </style>
 </head>
 <body>
 <h1>Higgins — 日本語 DOCTOR
-  <small>Weizenbaum の 1966 年 DOCTOR を日本語で。ELIZA 実装 = Anthony &amp; Max Hay (CC0)</small></h1>
+  <small>Weizenbaum の 1966 年 DOCTOR を日本語で。ELIZA 実装 = Anthony &amp; Max Hay (CC0) /
+         日本語入力 = hechima (powered by Mozc)</small></h1>
 
 <div id="log"></div>
 
-<form id="form">
-  <input id="input" autocomplete="off" autofocus placeholder="話しかけてください">
-  <button type="submit">送る</button>
-</form>
-<div id="tokens"></div>
+<div id="bar"><div class="inner">
+  <div id="cands"></div>
+  <div id="line"></div>
+  <div id="status">読み込み中…</div>
+  <div id="tokens"></div>
+</div></div>
 
+<script src="vendor/keymap-engine/keymap-engine.js"></script>
+<script src="vendor/hechima/hechima.js"></script>
 <script src="eliza.js"></script>
 <script src="wakachi.js"></script>
 <script src="tsunagi.js"></script>
 <script>
 (async () => {
-  const log = document.getElementById('log');
-  const form = document.getElementById('form');
-  const input = document.getElementById('input');
-  const tokensEl = document.getElementById('tokens');
+  const $ = (id) => document.getElementById(id);
+  const logEl = $('log'), lineEl = $('line'), candsEl = $('cands'),
+        statusEl = $('status'), tokensEl = $('tokens');
 
   const write = (text, cls) => {
     const div = document.createElement('div');
-    div.className = cls;
-    div.textContent = text;
-    log.appendChild(div);
-    log.scrollTop = log.scrollHeight;
+    div.className = cls; div.textContent = text;
+    logEl.appendChild(div);
+    window.scrollTo(0, document.body.scrollHeight);
   };
 
+  // ---- ELIZA ----
   const scriptText = await (await fetch('../doctor/ja.txt')).text();
   const [status, script] = readScript(scriptText);
   if (status !== 'success') { write('スクリプト読み込み失敗: ' + status, 'doc'); return; }
-
   const wk = makeWakachi(scriptText);
   const eliza = new Eliza(script.rules, script.memoryRule, new nullTracer(), 500);
-
   write(tsunagi(join(script.helloMessage)), 'doc');
 
-  // ★入力の口はここ 1 つ。hechima を挿すときも、確定した文字列をこの関数へ渡す。
+  // ★入力の口はここ 1 つ。CLI 版（tools/talk.py）と同じ 3 段を通す。
+  let buffer = '';
   async function say(text) {
     if (!text.trim()) return;
     write('> ' + text, 'you');
@@ -67,12 +78,83 @@
     write(tsunagi(await eliza.response(tokenized)), 'doc');
   }
 
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const text = input.value;
-    input.value = '';
-    await say(text);
+  // ---- hechima（日本語入力）----
+  const abs = (p) => new URL(p, location.href).href;
+  const worker = new Worker(abs('vendor/hechima/hechima-worker.js'));
+  // ★worker のロード失敗は沈黙する（connectWorker は error を見ない）。必ず自分で拾う。
+  worker.addEventListener('error', (e) => {
+    statusEl.textContent = 'worker の読み込みに失敗: ' + (e.message || e.filename);
   });
+
+  const conn = Hechima.connectWorker(worker, {
+    maxCands: 20,
+    onProgress: (loaded, total) => {
+      statusEl.textContent = total
+        ? `辞書を読み込み中… ${(loaded / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MB`
+        : '辞書を読み込み中…';
+    },
+  });
+  // ★conn.ready() は無い。init() が返す Promise が ready 情報。
+  const ready = conn.init({
+    wasmJs:  abs('vendor/hechima-wasm/hechima-wasm.js'),
+    dataUrl: abs('vendor/hechima-wasm/mozc.data'),
+  });
+
+  const render = (segs) => {
+    lineEl.innerHTML = '';
+    lineEl.appendChild(document.createTextNode(buffer));
+    for (const s of (segs || [])) {
+      const span = document.createElement('span');
+      span.className = 'composing' + (s.kind === 'focus' ? ' focus' : '');
+      span.textContent = s.text;
+      lineEl.appendChild(span);
+    }
+    const caret = document.createElement('span');
+    caret.className = 'caret';
+    lineEl.appendChild(caret);
+  };
+
+  const renderCands = (segs) => {
+    const focus = (segs || []).find((s) => s.kind === 'focus');
+    if (!focus || !focus.candidates) { candsEl.textContent = ''; return; }
+    candsEl.innerHTML = '';
+    focus.candidates.slice(0, 9).forEach((c, i) => {
+      const el = document.createElement(i === focus.candidateIndex ? 'b' : 'span');
+      el.textContent = ` ${i + 1}.${c}`;
+      candsEl.appendChild(el);
+    });
+  };
+
+  const fep = Hechima.createFep({
+    show(segs) { render(segs); renderCands(segs); },
+    hide()     { render([]); candsEl.textContent = ''; },
+    commit(text) { buffer += text; render([]); candsEl.textContent = ''; },
+    hostKey(name) {
+      if (name === 'Enter') { const t = buffer; buffer = ''; render([]); say(t); }
+      else if (name === 'Backspace') { buffer = buffer.slice(0, -1); render([]); }
+    },
+    ...conn.callbacks(),
+  });
+  fep.setActive(true);
+
+  // ★内蔵ローマ字は畳む方針なので配列 JSON を明示する（hechima 側の指示）
+  try {
+    const raw = await (await fetch('vendor/keymaps/romaji.json')).json();
+    const engine = new KeymapEngine.InputEngine(KeymapEngine.decodeKeymap(raw));
+    engine.onStateChange = () => fep.pumpEngine();
+    fep.setEngine(engine, (tap) => KeymapEngine.keyEventFromBrowser(tap));
+  } catch (e) {
+    statusEl.textContent = '配列の読み込みに失敗（内蔵ローマ字で続行）: ' + e.message;
+  }
+
+  addEventListener('keydown', (e) => { if (fep.feed(e)) e.preventDefault(); });
+  addEventListener('keyup',   (e) => { fep.feedUp(e); });
+
+  ready.then((info) => {
+    statusEl.textContent = 'ローマ字で打てます。Enter で送信。'
+      + (info && info.version ? `（hechima ${info.version}）` : '');
+  }).catch((e) => { statusEl.textContent = '変換エンジンの初期化に失敗: ' + e; });
+  render([]);
 })();
 </script>
 </body>
