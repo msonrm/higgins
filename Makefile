@@ -45,8 +45,9 @@ $(BUILD)/eliza-canary: $(ELIZA_SRC) scripts/patch_tests.py
 #   分かち書き（split_user_input）を入れたあと、この挙動が保たれているか。
 #   期待値は実測を焼いたものだが、なぜ正しいかは experiments/README.md にある。
 test-ja: $(BUILD)/eliza
-	@$(BUILD)/eliza --nobanner experiments/ja_hypothesis.txt \
-	  < experiments/ja_hypothesis.in \
+	@python3 scripts/wakachi.py experiments/ja_hypothesis.txt \
+	    < experiments/ja_hypothesis.in \
+	  | $(BUILD)/eliza --nobanner experiments/ja_hypothesis.txt \
 	  | diff -u experiments/ja_hypothesis.out - > /dev/null \
 	  || { echo 'FAIL: 日本語ゴールデンが一致しない'; exit 1; }
 	@echo 'OK: 日本語ゴールデン一致'
