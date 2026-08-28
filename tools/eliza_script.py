@@ -62,9 +62,14 @@ def classify(form):
         tags = [t.lstrip("/") for t in tags]
         return {"kind": "DLIST", "keyword": head, "subst": subst, "tags": tags}
 
-    if len(rest) == 1 and isinstance(rest[0], list) and rest[0] and rest[0][0] == "=":
+    # ★(= EVERYONE) と (=WHAT) の両方の書き方がスクリプト内に混在している。
+    #   後者を取りこぼすと EQUIV が RULE に紛れて数が狂う（実際に狂っていた）。
+    if (len(rest) == 1 and isinstance(rest[0], list) and rest[0]
+            and isinstance(rest[0][0], str) and rest[0][0].startswith("=")):
+        inner = rest[0]
+        target = inner[0][1:] if len(inner[0]) > 1 else (inner[1] if len(inner) > 1 else "")
         return {"kind": "EQUIV", "keyword": head, "subst": subst, "rank": rank,
-                "target": rest[0][1]}
+                "target": target}
 
     if not rest:
         return {"kind": "SUBST_ONLY", "keyword": head, "subst": subst}
