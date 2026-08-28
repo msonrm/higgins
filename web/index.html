@@ -29,9 +29,14 @@
 </style>
 </head>
 <body>
-<h1>Higgins — 日本語 DOCTOR
-  <small>Weizenbaum の 1966 年 DOCTOR を日本語で。ELIZA 実装 = Anthony &amp; Max Hay (CC0) /
+<h1>Higgins
+  <small>ELIZA（1966）の上で script を差し替える。実装 = Anthony &amp; Max Hay (CC0) /
          日本語入力 = hechima (powered by Mozc)</small></h1>
+
+<p><select id="pick">
+  <option value="../doctor/renku_ja.txt">連句 —— 自由律俳句の付合（本歌取りあり）</option>
+  <option value="../doctor/ja.txt">DOCTOR —— Weizenbaum の 1966 年版を日本語で</option>
+</select></p>
 
 <div id="log"></div>
 
@@ -49,6 +54,7 @@
 <script src="tsunagi.js"></script>
 <script>
 (async () => {
+  let buffer = '';
   const $ = (id) => document.getElementById(id);
   const logEl = $('log'), lineEl = $('line'), candsEl = $('cands'),
         statusEl = $('status'), tokensEl = $('tokens');
@@ -69,18 +75,25 @@
     window.scrollTo(0, document.body.scrollHeight);
   };
 
-  // ---- ELIZA ----
-  const scriptText = await (await fetch('../doctor/ja.txt')).text();
-  const [status, script] = readScript(scriptText);
-  if (status !== 'success') { write('スクリプト読み込み失敗: ' + status, 'doc'); return; }
-  const wk = makeWakachi(scriptText);
-  const eliza = new Eliza(script.rules, script.memoryRule, new nullTracer(), 500);
-  write(tsunagi(join(script.helloMessage)), 'doc');
+  // ---- ELIZA（script は差し替えられる = Weizenbaum の設計思想）----
+  let eliza = null, wk = null;
+  async function loadScript(url) {
+    const scriptText = await (await fetch(url)).text();
+    const [status, script] = readScript(scriptText);
+    if (status !== 'success') { write('スクリプト読み込み失敗: ' + status, 'doc'); return; }
+    wk = makeWakachi(scriptText);
+    eliza = new Eliza(script.rules, script.memoryRule, new nullTracer(), 500);
+    logEl.innerHTML = '';
+    buffer = '';
+    render([]);
+    write(tsunagi(join(script.helloMessage)), 'doc');
+  }
+  const pick = document.getElementById('pick');
+  pick.addEventListener('change', () => loadScript(pick.value));
 
   // ★入力の口はここ 1 つ。CLI 版（tools/talk.py）と同じ 3 段を通す。
-  let buffer = '';
   async function say(text) {
-    if (!text.trim()) return;
+    if (!text.trim() || !eliza) return;
     write('> ' + text, 'you');
     const tokenized = wk.split(text);
     diag('tokens', tokenized);
@@ -191,6 +204,7 @@
       + (info && info.version ? `（hechima ${info.version}）` : '');
   }).catch((e) => { statusEl.textContent = '変換エンジンの初期化に失敗: ' + e; });
   render([]);
+  await loadScript(pick.value);
 })();
 </script>
 </body>
