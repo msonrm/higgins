@@ -93,6 +93,25 @@ def main():
     for shape, n in shapes.most_common(8):
         print(f"    {shape} : {n}")
 
+    print("\n--- ★同じ句が複数の規則に重複していないか ---")
+    # 連句では「打越」（近い距離での再出）を嫌う。別々の規則が同じ句を持っていると、
+    # 巡回で避けようがない距離で 2 回出る。
+    tmpl = collections.Counter()
+    owner = collections.defaultdict(list)
+    for r in rules:
+        for tr in r.get("transforms", []):
+            if not tr or not isinstance(tr[0], list):
+                continue
+            for rs in tr[1:]:
+                if isinstance(rs, list):
+                    t = " ".join(rs)
+                    tmpl[t] += 1
+                    owner[t].append(r["keyword"])
+    dups = [(t, n) for t, n in tmpl.items() if n > 1]
+    print(f"  テンプレート {sum(tmpl.values())} / ユニーク {len(tmpl)} / 重複 {len(dups)}")
+    for t, n in dups:
+        print(f"    ★{n} 回: 「{t}」 ← {owner[t]}")
+
     print("\n--- 上位語・下位語への『変換』があるか ---")
     print("  DLIST は分解側にしか現れない（照合用）か? "
           f"再構成側にタグ参照: "
