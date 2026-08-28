@@ -1,0 +1,14 @@
+build/
+*.o
+.DS_Store
+*.log
+
+# ★vendor/eliza は同梱する。CC0 なので取り込みは自由で、しかも
+#   「原典の DOCTOR がそのまま走る」ことがこの企画の主張そのものなので、
+#   各自で用意させる形は採らない（Zenmai が story file を同梱したのと同じ判断）。
+
+# ★vendor/eliza/doc の画像は取り込まない。upstream は CC0 だが、その宣言は
+#   著者自身の著作物にしか及ばず、映画スチル・第三者の写真・IBM の資料が混ざっている。
+#   実装は src/ だけで完結していて 1 枚も要らない。理由は vendor/VENDOR.md。
+vendor/eliza/doc/*.jpg
+vendor/eliza/doc/*.png

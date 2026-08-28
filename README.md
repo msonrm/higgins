@@ -1,0 +1,66 @@
+# Higgins
+
+**ELIZA (1966), run faithfully — then taught to speak four languages, on machines with no keyboard.**
+
+**1966 年の ELIZA を忠実に走らせ、4 言語を教え込み、キーボードの無い機械で打つ。**
+
+> ★**Nothing works yet — this is the skeleton.** / **まだ何も動いていない。骨組みだけ。**
+
+## What it is / これは何か
+
+Joseph Weizenbaum's ELIZA is not a chatbot — it is a **script interpreter**. `DOCTOR` is
+merely the most famous script written for it. This project takes that seriously:
+
+1. run the **original 1966 DOCTOR** exactly as published, and
+2. write DOCTOR scripts for **Japanese, Korean, English and Hindi**, and
+3. run all four on **single-board handhelds with no keyboard**, typed with a D-pad and four buttons.
+
+ELIZA は「チャットボット」ではなく**スクリプト解釈器**で、`DOCTOR` はそこに載せた
+最も有名なスクリプトにすぎない。この企画はそれを額面どおりに受け取る ——
+**(1)** 1966 年の DOCTOR を発表されたとおりに走らせ、**(2)** 日本語・韓国語・英語・
+ヒンディー語の DOCTOR を書き、**(3)** その 4 つを**キーボードの無いハンドヘルド**で、
+十字キーと 4 ボタンだけで打つ。
+
+## Build / ビルド
+
+```sh
+make        # -> build/eliza
+make test   # ★「検査が生きていること」まで確かめる
+```
+
+`make test` checks two things, not one: that the tests pass, **and that a deliberately
+broken test still turns red**. The upstream test runner prints nothing on success, so
+silence must never be mistaken for green.
+
+`make test` は 2 つ確かめる —— テストが通ること、**および、わざと壊したテストが
+ちゃんと赤になること**。upstream の検査は成功時に何も出力しないので、
+★**無言を緑と取り違えない**ようにするため。
+
+## Name / 名前について
+
+Henry Higgins is the phonetician who teaches Eliza Doolittle to speak, in Shaw's
+*Pygmalion* (1913) — the play Weizenbaum took the name ELIZA from. Writing the scripts
+is the teaching side of that arrangement, which is what this repository is for.
+
+**This project does not use ELIZA as its own name or brand.**
+
+ヘンリー・ヒギンズは、Shaw『ピグマリオン』(1913) でイライザ・ドゥーリトルに
+喋り方を教える音声学者。Weizenbaum が ELIZA の名を採ったのがこの戯曲で、
+**スクリプトを書くのは「教える側」の仕事**にあたる。
+
+★**ELIZA の名は、この企画の名称・ブランドには用いない。**
+
+## License / ライセンス
+
+MIT for the code in this repository.
+
+`vendor/eliza/` is Anthony Hay's ELIZA implementation under **CC0 1.0**. The original
+ELIZA source (MAD-SLIP) and the DOCTOR script it carries were found in the MIT archives
+in 2021 and released as **CC0 with the permission of Weizenbaum's estate** — which is
+why the original script can be shipped here rather than left for you to find.
+Provenance in [`vendor/VENDOR.md`](vendor/VENDOR.md).
+
+本リポジトリのコードは MIT。`vendor/eliza/` は Anthony Hay による ELIZA 実装で
+**CC0 1.0**。同梱の DOCTOR は、2021 年に MIT のアーカイブで見つかった原典が
+**遺族の許諾のもと CC0 で公開された**もの ★**だから同梱できる**（「各自で用意」に
+しなくてよい）。出自は [`vendor/VENDOR.md`](vendor/VENDOR.md)。
