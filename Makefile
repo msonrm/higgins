@@ -7,7 +7,7 @@ CXXFLAGS ?= -std=c++20 -O1 -w
 BUILD     := build
 ELIZA_SRC := vendor/eliza/src/eliza.cpp
 
-.PHONY: all test test-ja test-ja-doctor clean
+.PHONY: all test test-ja test-ja-doctor test-web clean
 
 all: $(BUILD)/eliza
 
@@ -20,7 +20,7 @@ $(BUILD)/eliza: $(ELIZA_SRC)
 #   そこで 2 つ焼いて、両方の結果が揃ってはじめて緑とする:
 #     eliza-count  … 本番と同じロジック + 件数表示   → 「1 件以上あって 0 失敗」
 #     eliza-canary … それにわざと落ちるテストを 1 個 → 「1 失敗」（検査が生きている証拠）
-test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor
+test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-web
 	@printf '\n' | $(BUILD)/eliza-count | grep -qE '[1-9][0-9]* assertions' \
 	  || { echo 'FAIL: テストが 1 件も走っていない'; exit 1; }
 	@printf '\n' | $(BUILD)/eliza-count | grep -q '0 failures' \
@@ -61,6 +61,18 @@ test-ja-doctor: $(BUILD)/eliza
 	  | diff -u experiments/ja_doctor.out - > /dev/null \
 	  || { echo 'FAIL: 日本語 DOCTOR のゴールデンが一致しない'; exit 1; }
 	@echo 'OK: 日本語 DOCTOR ゴールデン一致'
+
+# ★web/ の JS 3 本を Node で動かし、C++ 版と同じ応答が出るかを見る。
+#   ブラウザを開かずに Web 版の回帰を守るため。★独立した 2 実装が一致することは
+#   スクリプトの解釈が実装依存でないことの証拠にもなる。
+test-web:
+	@command -v node > /dev/null || { echo 'SKIP: node が無い'; exit 0; }
+	@mkdir -p $(BUILD)
+	@node tools/web_test.mjs | grep -v '^$$' > $(BUILD)/web.out
+	@grep -v '^$$' experiments/ja_doctor.out | diff -u - $(BUILD)/web.out > /dev/null \
+	  || { echo 'FAIL: Web 版（JS）が C++ 版と違う応答を返す'; \
+	       grep -v '^$$' experiments/ja_doctor.out | diff -u - $(BUILD)/web.out | head -20; exit 1; }
+	@echo 'OK: Web 版と C++ 版の応答が一致'
 
 clean:
 	rm -rf $(BUILD)

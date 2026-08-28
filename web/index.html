@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Higgins — 日本語 DOCTOR</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 0 auto;
+         padding: 1rem; line-height: 1.7; }
+  h1 { font-size: 1.1rem; font-weight: 600; }
+  h1 small { font-weight: 400; opacity: .7; display: block; font-size: .8rem; }
+  #log { min-height: 20rem; white-space: pre-wrap; }
+  #log .you { opacity: .65; }
+  #log .doc { font-weight: 500; }
+  form { display: flex; gap: .5rem; margin-top: 1rem; }
+  input { flex: 1; font: inherit; padding: .5rem; }
+  button { font: inherit; padding: .5rem 1rem; }
+  #tokens { font-size: .75rem; opacity: .5; font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+<h1>Higgins — 日本語 DOCTOR
+  <small>Weizenbaum の 1966 年 DOCTOR を日本語で。ELIZA 実装 = Anthony &amp; Max Hay (CC0)</small></h1>
+
+<div id="log"></div>
+
+<form id="form">
+  <input id="input" autocomplete="off" autofocus placeholder="話しかけてください">
+  <button type="submit">送る</button>
+</form>
+<div id="tokens"></div>
+
+<script src="eliza.js"></script>
+<script src="wakachi.js"></script>
+<script src="tsunagi.js"></script>
+<script>
+(async () => {
+  const log = document.getElementById('log');
+  const form = document.getElementById('form');
+  const input = document.getElementById('input');
+  const tokensEl = document.getElementById('tokens');
+
+  const write = (text, cls) => {
+    const div = document.createElement('div');
+    div.className = cls;
+    div.textContent = text;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+  };
+
+  const scriptText = await (await fetch('../doctor/ja.txt')).text();
+  const [status, script] = readScript(scriptText);
+  if (status !== 'success') { write('スクリプト読み込み失敗: ' + status, 'doc'); return; }
+
+  const wk = makeWakachi(scriptText);
+  const eliza = new Eliza(script.rules, script.memoryRule, new nullTracer(), 500);
+
+  write(tsunagi(join(script.helloMessage)), 'doc');
+
+  // ★入力の口はここ 1 つ。hechima を挿すときも、確定した文字列をこの関数へ渡す。
+  async function say(text) {
+    if (!text.trim()) return;
+    write('> ' + text, 'you');
+    const tokenized = wk.split(text);
+    tokensEl.textContent = '[' + tokenized + ']';
+    write(tsunagi(await eliza.response(tokenized)), 'doc');
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const text = input.value;
+    input.value = '';
+    await say(text);
+  });
+})();
+</script>
+</body>
+</html>
