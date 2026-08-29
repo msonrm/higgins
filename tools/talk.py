@@ -14,8 +14,18 @@ stdbuf -oL で行バッファに落とす。
 import argparse
 import io
 import os
+import re
 import subprocess
 import sys
+
+# ★反応（相槌・ト書き）は「（…）」か「短い文＋句点」で始まる。句には句点を入れていないので
+#   機械的に切れる。反応と句は性質が違うので、表示でも分ける。
+REACT_RE = re.compile(r"^(（[^）]*）|[^。]{1,14}。)(.+)$")
+
+
+def split_reaction(text):
+    m = REACT_RE.match(text)
+    return (m.group(1), m.group(2)) if m else (None, text)
 
 from eliza_script import parse, tokenize
 from tsunagi import tsunagi
@@ -69,7 +79,10 @@ def main():
     args = ap.parse_args()
 
     s = Session(args.script)
-    print(s.greeting())
+    react, verse = split_reaction(s.greeting() or "")
+    if react:
+        print(f"  {react}")
+    print(verse)
     try:
         while True:
             try:
@@ -83,7 +96,10 @@ def main():
             reply = s.say(text)
             if reply is None:
                 break
-            print(reply)
+            react, verse = split_reaction(reply)
+            if react:
+                print(f"  {react}")
+            print(verse)
     finally:
         s.close()
 
