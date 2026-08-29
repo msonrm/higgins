@@ -12,3 +12,7 @@ build/
 #   実装は src/ だけで完結していて 1 枚も要らない。理由は vendor/VENDOR.md。
 vendor/eliza/doc/*.jpg
 vendor/eliza/doc/*.png
+
+# Python のキャッシュ
+__pycache__/
+*.pyc
