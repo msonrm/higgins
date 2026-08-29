@@ -68,7 +68,18 @@ function collectVocab(forms) {
     return new Set([...vocab].filter(w => w && !/^\d+$/.test(w) && w !== "=" && w !== "/"));
 }
 
+// ★ELIZA は "," "." を delimiter として節を切る。日本語の句読点を半角に写せば
+//   エンジン無改造でその仕組みに乗る（引用が節単位になって短くなる）。
+const WAKACHI_PUNCT = [["、"," , "],["，"," , "],["。"," . "],["．"," . "],
+                       ["！"," . "],["？"," . "],["!"," . "],["?"," . "]];
+
+function normalizePunct(text) {
+    for (const [k, v] of WAKACHI_PUNCT) text = text.split(k).join(v);
+    return text;
+}
+
 function wakachi(text, vocab, maxlen) {
+    text = normalizePunct(text);
     const out = [];
     let unknown = "";
     const flush = () => { if (unknown) { out.push(unknown); unknown = ""; } };

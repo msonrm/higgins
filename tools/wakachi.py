@@ -59,7 +59,22 @@ def collect_vocab(forms):
     return {w for w in vocab if w and not w.isdigit() and w not in ("=", "/")}
 
 
+# ★ELIZA は "," "." "BUT" を delimiter として節を切り、キーワードのある節だけを使う
+#   （eliza.cpp のコンストラクタでハードコード。スクリプトからは変えられない）。
+#   日本語の句読点を半角に写せば**エンジン無改造でその仕組みに乗る** ——
+#   引用が節単位になって短くなるという副次効果もある。
+PUNCT = {"、": " , ", "，": " , ", "。": " . ", "．": " . ",
+         "！": " . ", "？": " . ", "!": " . ", "?": " . "}
+
+
+def normalize_punct(text):
+    for k, v in PUNCT.items():
+        text = text.replace(k, v)
+    return text
+
+
 def wakachi(text, vocab, maxlen):
+    text = normalize_punct(text)
     out, unknown = [], []
 
     def flush():
