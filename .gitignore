@@ -16,3 +16,7 @@ vendor/eliza/doc/*.png
 # Python のキャッシュ
 __pycache__/
 *.pyc
+
+# wrangler の作業ディレクトリ
+.wrangler/
+dist/
