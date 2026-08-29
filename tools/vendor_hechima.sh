@@ -32,6 +32,11 @@ for f in "${FILES[@]}"; do
   cp "$SRC/$f" "$DST/$f"
 done
 
+# ★Mozc は BSD-3-Clause なので帰属表示が要る。hechima 側の通知をそのまま持ってくる
+#   （版ごとに更新されうるので、差し替えのたびに取り直す）。
+cp "$SRC/../../../THIRD_PARTY_NOTICES.md" "$DST/THIRD_PARTY_NOTICES.md" 2>/dev/null \
+  || cp "$HOME/development/hechima/THIRD_PARTY_NOTICES.md" "$DST/THIRD_PARTY_NOTICES.md"
+
 # ★取り込んだ実体の md5 を出す。vendor/VENDOR.md の hechima 節に貼る。
 echo "| ファイル | サイズ | md5 |"
 echo "|---|---|---|"

@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Higgins — 日本語 DOCTOR</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font-family: system-ui, sans-serif; max-width: 42rem; margin: 0 auto;
+         padding: 1rem 1rem 6rem; line-height: 1.8; }
+  h1 { font-size: 1.05rem; font-weight: 600; margin-bottom: .2rem; }
+  h1 small { font-weight: 400; opacity: .65; display: block; font-size: .78rem; line-height: 1.5; }
+  #log > div { margin: .35rem 0; }
+  #log .you { opacity: .6; }
+  #log .doc { font-weight: 500; }
+  /* ★反応（相槌・ト書き）は句と性質が違うので、薄く小さく別行に出す */
+  #log .react { opacity: .45; font-size: .85rem; margin-bottom: -.3rem; }
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; background: Canvas;
+         border-top: 1px solid color-mix(in srgb, CanvasText 20%, transparent);
+         padding: .7rem 1rem; }
+  #bar .inner { max-width: 42rem; margin: 0 auto; }
+  #line { min-height: 1.8em; font-size: 1.05rem; }
+  #line .composing { text-decoration: underline; text-underline-offset: .25em; }
+  #line .focus { text-decoration: underline; text-decoration-thickness: 2px; }
+  #line .caret { border-left: 2px solid currentColor; margin-left: 1px; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0 } }
+  #cands { font-size: .85rem; opacity: .8; min-height: 1.4em; }
+  #cands b { font-weight: 600; text-decoration: underline; }
+  #status { font-size: .75rem; opacity: .55; }
+  #tokens { font-size: .72rem; opacity: .45; font-family: ui-monospace, monospace; }
+  #about { font-size: .85rem; opacity: .8; margin: .5rem 0 1rem; }
+  #about summary { cursor: pointer; opacity: .7; }
+  #about p { margin: .6rem 0; }
+</style>
+</head>
+<body>
+<h1>Higgins
+  <small>ELIZA（1966）の上で script を差し替える。実装 = Anthony &amp; Max Hay (CC0) /
+         日本語入力 = hechima (powered by Mozc)</small></h1>
+
+<p><select id="pick">
+  <option value="../doctor/renku_ja.txt">連句 —— 自由律俳句の付合（本歌取りあり）</option>
+  <option value="../doctor/ja.txt">DOCTOR —— Weizenbaum の 1966 年版を日本語で</option>
+</select></p>
+
+<details id="about"><summary>これは何か</summary>
+<p><b>ELIZA</b>（Weizenbaum, 1966）は「チャットボット」ではなく <b>script 解釈器</b>で、
+<code>DOCTOR</code> はその上に載せた最も有名な script にすぎません。
+このページは <b>ELIZA 本体を 1 行も変えずに</b>、script だけを差し替えて
+<b>自由律俳句の付合（連句）</b>を動かしています。</p>
+<p>相手はあなたの句から語を拾い、型に入れて返し、ときどき前の話題を蒸し返します。
+<b>内容は一切理解していません。</b></p>
+<p>★<b>DOCTOR のほうはつまらないと思います。それが正しい反応です。</b>
+Weizenbaum 自身これを面白いものとして作っておらず、彼が驚愕したのは
+「人がこんな貧弱なものに心を見てしまうこと」のほうでした。
+1966 年は<b>機械が返事をすること自体が驚き</b>で、そこに全部が乗っていました。
+今それが消えたので、同じ script が退屈に見えます。
+<b>その差こそがこの 60 年で起きたこと</b>なので、比較用に残してあります。</p>
+<p>日本語入力は <a href="https://github.com/msonrm/hechima">hechima</a>（<b>powered by Mozc</b>）。
+ELIZA 実装は <a href="https://github.com/anthay/ELIZA">Anthony &amp; Max Hay</a>（CC0）。
+このページの自作部分は MIT。
+第三者ソフトウェアの著作権表示は <a href="vendor/THIRD_PARTY_NOTICES.md">THIRD_PARTY_NOTICES</a>。</p>
+</details>
+
+<div id="log"></div>
+
+<div id="bar"><div class="inner">
+  <div id="cands"></div>
+  <div id="line"></div>
+  <div id="status">読み込み中…</div>
+  <div id="tokens"></div>
+</div></div>
+
+<script src="vendor/keymap-engine/keymap-engine.js"></script>
+<script src="vendor/hechima/hechima.js"></script>
+<script src="eliza.js"></script>
+<script src="wakachi.js"></script>
+<script src="tsunagi.js"></script>
+<script>
+(async () => {
+  let buffer = '';
+  const $ = (id) => document.getElementById(id);
+  const logEl = $('log'), lineEl = $('line'), candsEl = $('cands'),
+        statusEl = $('status'), tokensEl = $('tokens');
+
+  // ★何も起きないときに何も分からないのが一番困るので、最後の出来事を出す
+  let diagOn = false;
+  const diag = (what, detail) => {
+    if (!diagOn) return;
+    tokensEl.textContent = `${what}: ${detail}`;
+  };
+  addEventListener('error', (e) => { statusEl.textContent = 'エラー: ' + e.message; });
+  addEventListener('unhandledrejection', (e) => { statusEl.textContent = '未処理の失敗: ' + e.reason; });
+
+  // ★反応は「（…）」か「短い文＋句点」で始まる。句には句点を入れていないので機械的に切れる。
+  const REACT_RE = /^(（[^）]*）|[^。]{1,14}。)(.+)$/;
+  const writeReply = (text) => {
+    const m = text.match(REACT_RE);
+    if (m) { write(m[1], 'react'); write(m[2], 'doc'); }
+    else write(text, 'doc');
+  };
+
+  const write = (text, cls) => {
+    const div = document.createElement('div');
+    div.className = cls; div.textContent = text;
+    logEl.appendChild(div);
+    window.scrollTo(0, document.body.scrollHeight);
+  };
+
+  // ---- ELIZA（script は差し替えられる = Weizenbaum の設計思想）----
+  let eliza = null, wk = null;
+  async function loadScript(url) {
+    // ★開発時は web/ を直接開く（../doctor/）、公開時は dist/ に平坦化する（doctor/）。
+    //   404 を見て fallback するので、どちらでも動く。★キャッシュ回避も兼ねる。
+    const bust = '?t=' + Date.now();
+    let res = await fetch(url + bust);
+    if (!res.ok) res = await fetch(url.replace('../doctor/', 'doctor/') + bust);
+    const scriptText = await res.text();
+    const [status, script] = readScript(scriptText);
+    if (status !== 'success') { write('スクリプト読み込み失敗: ' + status, 'doc'); return; }
+    wk = makeWakachi(scriptText);
+    eliza = new Eliza(script.rules, script.memoryRule, new nullTracer(), 500);
+    logEl.innerHTML = '';
+    buffer = '';
+    render([]);
+    writeReply(tsunagi(join(script.helloMessage)));
+  }
+  const pick = document.getElementById('pick');
+  pick.addEventListener('change', () => loadScript(pick.value));
+
+  // ★入力の口はここ 1 つ。CLI 版（tools/talk.py）と同じ 3 段を通す。
+  async function say(text) {
+    if (!text.trim() || !eliza) return;
+    write('> ' + text, 'you');
+    const tokenized = wk.split(text);
+    diag('tokens', tokenized);
+    try {
+      writeReply(tsunagi(await eliza.response(tokenized)));
+    } catch (err) {
+      statusEl.textContent = 'ELIZA でエラー: ' + err;   // ★沈黙させない
+    }
+  }
+
+  // ---- hechima（日本語入力）----
+  const abs = (p) => new URL(p, location.href).href;
+  const worker = new Worker(abs('vendor/hechima/hechima-worker.js'));
+  // ★worker のロード失敗は沈黙する（connectWorker は error を見ない）。必ず自分で拾う。
+  worker.addEventListener('error', (e) => {
+    statusEl.textContent = 'worker の読み込みに失敗: ' + (e.message || e.filename);
+  });
+
+  const conn = Hechima.connectWorker(worker, {
+    maxCands: 20,
+    onProgress: (loaded, total) => {
+      statusEl.textContent = total
+        ? `辞書を読み込み中… ${(loaded / 1048576).toFixed(1)} / ${(total / 1048576).toFixed(1)} MB`
+        : '辞書を読み込み中…';
+    },
+  });
+  // ★conn.ready() は無い。init() が返す Promise が ready 情報。
+  const ready = conn.init({
+    wasmJs:  abs('vendor/hechima-wasm/hechima-wasm.js'),
+    dataUrl: abs('vendor/hechima-wasm/mozc.data'),
+  });
+
+  const render = (segs) => {
+    lineEl.innerHTML = '';
+    lineEl.appendChild(document.createTextNode(buffer));
+    for (const s of (segs || [])) {
+      const span = document.createElement('span');
+      span.className = 'composing' + (s.kind === 'focus' ? ' focus' : '');
+      span.textContent = s.text;
+      lineEl.appendChild(span);
+    }
+    const caret = document.createElement('span');
+    caret.className = 'caret';
+    lineEl.appendChild(caret);
+  };
+
+  const renderCands = (segs) => {
+    const focus = (segs || []).find((s) => s.kind === 'focus');
+    if (!focus || !focus.candidates) { candsEl.textContent = ''; return; }
+    candsEl.innerHTML = '';
+    focus.candidates.slice(0, 9).forEach((c, i) => {
+      const el = document.createElement(i === focus.candidateIndex ? 'b' : 'span');
+      el.textContent = ` ${i + 1}.${c}`;
+      candsEl.appendChild(el);
+    });
+  };
+
+  const fep = Hechima.createFep({
+    show(segs) { render(segs); renderCands(segs); },
+    hide()     { render([]); candsEl.textContent = ''; },
+    commit(text) { buffer += text; render([]); candsEl.textContent = ''; },
+    // ★hostKey は「バッファが空のときの編集キー」の橋渡し口で、例は ArrowLeft / Backspace。
+    //   ★Enter はここに来ない（builtinNav が composing() 無しなら false を返して素通しにする）。
+    //   なので送信は keydown 側で拾う。BS もそちらに一本化した。
+    hostKey(name) { diag('hostKey', name); if (name === 'Backspace') backspace(); },
+    ...conn.callbacks(),
+  });
+  fep.setActive(true);
+
+  // ★内蔵ローマ字は畳む方針なので配列 JSON を明示する（hechima 側の指示）
+  try {
+    const raw = await (await fetch('vendor/keymaps/romaji.json')).json();
+    const engine = new KeymapEngine.InputEngine(KeymapEngine.decodeKeymap(raw));
+    engine.onStateChange = () => fep.pumpEngine();
+    fep.setEngine(engine, (tap) => KeymapEngine.keyEventFromBrowser(tap));
+  } catch (e) {
+    statusEl.textContent = '配列の読み込みに失敗（内蔵ローマ字で続行）: ' + e.message;
+  }
+
+  function backspace() { buffer = buffer.slice(0, -1); render([]); }
+
+  addEventListener('keydown', (e) => {
+    let eaten = false;
+    try {
+      eaten = fep.feed(e);
+    } catch (err) {
+      diag('feed 例外', String(err));   // ★沈黙させない
+    }
+    diag('keydown', `${e.key} eaten=${eaten}`);
+    if (eaten) { e.preventDefault(); return; }
+    // ★fep が飲まなかったキーはこちらの責任。Enter がここに落ちてくる。
+    if (e.key === 'Enter' && !e.isComposing) {
+      e.preventDefault();
+      const t = buffer; buffer = ''; render([]);
+      say(t).catch((err) => diag('say 例外', String(err)));
+    } else if (e.key === 'Backspace') {
+      e.preventDefault(); backspace();
+    }
+  });
+  addEventListener('keyup', (e) => { try { fep.feedUp(e); } catch (err) { diag('feedUp 例外', String(err)); } });
+
+  addEventListener('keydown', (e) => {
+    if (e.key === 'F2') { diagOn = !diagOn; tokensEl.textContent = diagOn ? '診断 ON（F2 で切替）' : ''; }
+  });
+
+  ready.then((info) => {
+    statusEl.textContent = 'ローマ字で打てます。Enter で送信。'
+      + (info && info.version ? `（hechima ${info.version}）` : '');
+  }).catch((e) => { statusEl.textContent = '変換エンジンの初期化に失敗: ' + e; });
+  render([]);
+  await loadScript(pick.value);
+})();
+</script>
+</body>
+</html>

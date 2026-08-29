@@ -28,6 +28,9 @@
   #cands b { font-weight: 600; text-decoration: underline; }
   #status { font-size: .75rem; opacity: .55; }
   #tokens { font-size: .72rem; opacity: .45; font-family: ui-monospace, monospace; }
+  #about { font-size: .85rem; opacity: .8; margin: .5rem 0 1rem; }
+  #about summary { cursor: pointer; opacity: .7; }
+  #about p { margin: .6rem 0; }
 </style>
 </head>
 <body>
@@ -39,6 +42,25 @@
   <option value="../doctor/renku_ja.txt">連句 —— 自由律俳句の付合（本歌取りあり）</option>
   <option value="../doctor/ja.txt">DOCTOR —— Weizenbaum の 1966 年版を日本語で</option>
 </select></p>
+
+<details id="about"><summary>これは何か</summary>
+<p><b>ELIZA</b>（Weizenbaum, 1966）は「チャットボット」ではなく <b>script 解釈器</b>で、
+<code>DOCTOR</code> はその上に載せた最も有名な script にすぎません。
+このページは <b>ELIZA 本体を 1 行も変えずに</b>、script だけを差し替えて
+<b>自由律俳句の付合（連句）</b>を動かしています。</p>
+<p>相手はあなたの句から語を拾い、型に入れて返し、ときどき前の話題を蒸し返します。
+<b>内容は一切理解していません。</b></p>
+<p>★<b>DOCTOR のほうはつまらないと思います。それが正しい反応です。</b>
+Weizenbaum 自身これを面白いものとして作っておらず、彼が驚愕したのは
+「人がこんな貧弱なものに心を見てしまうこと」のほうでした。
+1966 年は<b>機械が返事をすること自体が驚き</b>で、そこに全部が乗っていました。
+今それが消えたので、同じ script が退屈に見えます。
+<b>その差こそがこの 60 年で起きたこと</b>なので、比較用に残してあります。</p>
+<p>日本語入力は <a href="https://github.com/msonrm/hechima">hechima</a>（<b>powered by Mozc</b>）。
+ELIZA 実装は <a href="https://github.com/anthay/ELIZA">Anthony &amp; Max Hay</a>（CC0）。
+このページの自作部分は MIT。
+第三者ソフトウェアの著作権表示は <a href="vendor/THIRD_PARTY_NOTICES.md">THIRD_PARTY_NOTICES</a>。</p>
+</details>
 
 <div id="log"></div>
 
@@ -88,8 +110,12 @@
   // ---- ELIZA（script は差し替えられる = Weizenbaum の設計思想）----
   let eliza = null, wk = null;
   async function loadScript(url) {
-    // ★キャッシュ回避（スクリプトを直すたびに読み直す）
-    const scriptText = await (await fetch(url + '?t=' + Date.now())).text();
+    // ★開発時は web/ を直接開く（../doctor/）、公開時は dist/ に平坦化する（doctor/）。
+    //   404 を見て fallback するので、どちらでも動く。★キャッシュ回避も兼ねる。
+    const bust = '?t=' + Date.now();
+    let res = await fetch(url + bust);
+    if (!res.ok) res = await fetch(url.replace('../doctor/', 'doctor/') + bust);
+    const scriptText = await res.text();
     const [status, script] = readScript(scriptText);
     if (status !== 'success') { write('スクリプト読み込み失敗: ' + status, 'doc'); return; }
     wk = makeWakachi(scriptText);
