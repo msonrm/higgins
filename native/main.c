@@ -23,6 +23,7 @@
 #include "eliza_bridge.h"
 #include "conv.h"
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -291,14 +292,17 @@ static void draw_cands(void)
         boxw = W - MARGIN * 2;
     boxw = (boxw + 1) & ~1;             /* ★偶数（plat.h の契約） */
 
-    const int rows = n < CAND_ROWS ? n : CAND_ROWS;
-    const int boxh = rows * BASE + CAND_PAD * 2;
-
-    int top = sel - (rows - 1);         /* 選んでいるものを追う */
-    if (top > n - rows)
-        top = n - rows;
-    if (top < 0)
-        top = 0;
+    /* ★**ページ送り**にする（実機の指摘・2026-08-31）。1 件ずつ流れると、
+       どれを見ているのか分からなくなる —— 候補は「並び」なので、位置が
+       動かないほうが読める。**5 件で 1 ページ**。 */
+    const int pages = (n + CAND_ROWS - 1) / CAND_ROWS;
+    const int page = sel / CAND_ROWS;
+    const int top = page * CAND_ROWS;
+    const int rows = (n - top < CAND_ROWS) ? n - top : CAND_ROWS;
+    /* ★ページ表示のぶんだけ下に足を出す（重ねると最後の候補と被る）。
+       1 ページしか無いときは足も出さない。 */
+    const int foot = (pages > 1) ? 14 : 0;
+    const int boxh = rows * BASE + CAND_PAD * 2 + foot;
 
     int x = focus_x - CAND_PAD;         /* 注目文節の左端に合わせる */
     if (x + boxw > W - MARGIN)
@@ -334,6 +338,24 @@ static void draw_cands(void)
             cx += glyph_w(c[t]);
         }
     }
+    /* ★ページ数と位置（「1/2」）を右下に小さく出す。
+       ページ送りは**次があることが見えない**ので、印が要る
+       （スクロールなら窓の中の動きで分かるが、ページは動かない）。
+       ★1 ページしか無いときは出さない —— 意味の無い数字は雑音。 */
+    if (pages > 1) {
+        char nums[32];   /* ★8 だと -Wformat-truncation が出る（候補は 9 件までなので実際は 3 バイト） */
+        snprintf(nums, sizeof nums, "%d/%d", page + 1, pages);
+        uint16_t t[8];
+        const int tn = u8_to_u16(nums, -1, t, 8);
+        /* 12px の半角は 6px（glyph_w は 24px 用なので訊けない。glyph.h の注記と
+           同じ考え方 —— この大きさの半角数字は必ず 6px） */
+        int cx = x + boxw - CAND_PAD - tn * 6;
+        for (int i = 0; i < tn; i++) {
+            draw12(candbox, boxh, cx, boxh - 13, t[i], DIM);
+            cx += 6;
+        }
+    }
+
     upload_rect(x, y, boxw, boxh, candbox);
 }
 
@@ -430,7 +452,11 @@ static void ls_dirs(const uint8_t axes[4], int out[4])
 #define OPT_EDGE 0x36B9
 
 static const char *const MENU[] = { "つづける", "やめる" };
-enum { MENU_N = 2, MENU_W = 320, MENU_ROW = 32, MENU_H = MENU_N * MENU_ROW + 24 };
+/* ★高さは「上下の余白が同じ」になるように決める。
+   帯は各行の 4px 上から 32px なので、上の余白 = 12-4 = 8。
+   下も 8 にするには MENU_H = N*32 + 16（+24 にしていたら下だけ 16 になって、
+   実機で「やめるの下だけ広い」と言われた・2026-08-31）。 */
+enum { MENU_N = 2, MENU_W = 320, MENU_ROW = 32, MENU_H = MENU_N * MENU_ROW + 16 };
 static uint16_t menubox[MENU_H][W];
 
 static void menu_draw(int sel)
