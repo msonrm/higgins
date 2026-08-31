@@ -192,14 +192,6 @@ static int caret_line_move(int d)
     return 1;
 }
 
-/* いまキャレットが最終行にいるか（↓ を変換開始に使うかの判断） */
-static int caret_on_last_line(void)
-{
-    int start[BOX_LINES];
-    const int nl = box_layout(comp, clen, start);
-    return nl <= 1 || caret >= start[nl - 1];
-}
-
 /* 打っている字と行インジケータ（ind = 0 なら箱だけ）を描いて送る。
  *   car < 0 … キャレットを描かない（変換中）
  *   ua < 0  … 下線を引かない。そうでなければ **[ua, n) が未確定**として薄い下線を
@@ -405,6 +397,14 @@ static void draw_cands(void)
             cx += glyph_w(c[t]);
         }
     }
+    /* ★追加候補と本来の候補の**あいだに線**を引く（実機の指摘・2026-09-01）——
+       別枠であることが目で分かるように。 */
+    if (na > 0 && na < rows) {
+        const int ly = CAND_PAD + na * BASE;
+        for (int i = 4; i < boxw - 4; i++)
+            candbox[ly][x + i] = ACCENT;
+    }
+
     /* ★ページの位置は**点列**で示す（hechima の `pageDots` と同じ語彙）——
        ★**数えずに掴める**のが要点。12px の数字は実機で「小さすぎて読めない」と
        言われた（2026-08-31）。
@@ -914,19 +914,18 @@ static void interactive(void)
                     if (conv_active()) {
                         conv_next();
                         dirty = 1;
-                    } else if (!caret_on_last_line()) {
-                        /* ★上の行にいるなら、まず下の行へ戻す。最終行まで来たら
-                           従来どおり変換が始まる —— 打ち終わった直後は必ず
-                           最終行なので、変換の手数は変わらない。 */
-                        caret_line_move(1);
-                        gm.eagerSet = 0;
-                        dirty = 1;
                     } else if (clen > fixed) {
                         /* ★**未確定の部分だけ**を変換する（comp[fixed..clen)）。
-                           エンジンが無い / 変換できないときは何も起きない
-                           （かなのまま確定できる）。 */
+                           ★条件は「未確定があるか」であって「最終行にいるか」では
+                             ない（実機の指摘・2026-09-01）—— 行で決めると、
+                             複数行の 1 行目にカーソルを置いて打ち始めたときに
+                             **変換できなくなる**。 */
                         if (conv_start(comp + fixed, clen - fixed))
                             dirty = 1;
+                    } else if (caret_line_move(1)) {
+                        /* 全部確定済みなら ↓ は行移動（↑ の対） */
+                        gm.eagerSet = 0;
+                        dirty = 1;
                     } else {
                         view_scroll(SCROLL_STEP);
                     }
