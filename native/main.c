@@ -21,6 +21,12 @@
 #include "wakachi.h"
 #include "tsunagi.h"
 #include "eliza_bridge.h"
+#include "conv.h"
+
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 /* build.sh が objcopy で焼き込む DOCTOR スクリプト（UTF-8 の S 式）。
    ★ファイルを外に置かないのは、「同梱してある」という主張を配布の形に
@@ -133,15 +139,19 @@ static int box_layout(const uint16_t *s, int n, int *start)
     return nl;
 }
 
-/* 打っている字と行インジケータ（ind = 0 なら箱だけ）を描いて送る。 */
-static void draw_input(const uint16_t *s, int n, int car, uint16_t ind)
+/* 打っている字と行インジケータ（ind = 0 なら箱だけ）を描いて送る。
+ *   car < 0 … キャレットを描かない（変換中）
+ *   fa < 0  … 下線を引かない。そうでなければ全体に薄い下線を引き、
+ *             [fa, fb) の文節だけ太くする（★IME の「注目文節」の作法）
+ */
+static void draw_input(const uint16_t *s, int n, int car, uint16_t ind, int fa, int fb)
 {
     int start[BOX_LINES];
     const int nl = box_layout(s, n, start);
 
-    int cl = 0;                        /* キャレットのある行 */
+    int cl = 0;                        /* キャレット（変換中は focus）のある行 */
     for (int i = 0; i < nl; i++)
-        if (start[i] <= car)
+        if (start[i] <= (car < 0 ? fa : car))
             cl = i;
 
     /* 見える窓をキャレットに追従させる（★キャレットは常に見えている） */
@@ -167,9 +177,16 @@ static void draw_input(const uint16_t *s, int n, int car, uint16_t ind)
             if (x + glyph_w(s[i]) > BOX_X1)
                 break;                 /* ★draw24 は横の範囲を見ない */
             draw24(box, BOX_H, x, y, s[i], INK);
+            if (fa >= 0) {                 /* 変換中: 未確定の下線 */
+                const int on = (i >= fa && i < fb);
+                const uint16_t col = on ? ACCENT : DIM;
+                for (int t = 0; t < (on ? 2 : 1); t++)
+                    for (int c = 0; c < glyph_w(s[i]); c++)
+                        box[y + BASE - 1 - t][x + c] = col;
+            }
             x += glyph_w(s[i]);
         }
-        if (top + r != cl)
+        if (car < 0 || top + r != cl)
             continue;
         if (car >= i1) {               /* 行末: 字の右へ 3px */
             cx = x;
@@ -239,6 +256,68 @@ static void carry_over_pad(void)
     gp_sync_prev(&gm, &f);
 }
 
+/* ---- 左スティックの向き ----
+ * ★**大きい方の軸だけを見る**（engine.ts の dominant と同じ）。斜めに倒したときに
+ *   2 方向が同時に発火すると、変換中は「候補送り + 文節移動」が一度に起きる。
+ * 閾値 0x40 は右スティックのフリック（render.c の pad_rstick_flick）に合わせた。 */
+enum { LS_DELAY = 24, LS_INTERVAL = 5 };   /* 400ms / 85ms（1 field ≒ 17ms） */
+
+static void ls_dirs(const uint8_t axes[4], int out[4])
+{
+    const int dx = (int)axes[2] - 0x80, dy = (int)axes[3] - 0x80;
+    const int ax = dx < 0 ? -dx : dx, ay = dy < 0 ? -dy : dy;
+    out[0] = out[1] = out[2] = out[3] = 0;
+    if (ax < 0x40 && ay < 0x40)
+        return;
+    if (ax >= ay)
+        out[dx < 0 ? 0 : 1] = 1;           /* ← → */
+    else
+        out[dy < 0 ? 2 : 3] = 1;           /* ↑ ↓ */
+}
+
+/* ---- 変換エンジンの置き場 ----
+ * ★探し方は glyph_ft.c（フォント）と同じ考え方: 環境変数 → 実行ファイルの隣。 */
+static const char *near_exe(const char *rel, char *buf, int max)
+{
+    const ssize_t n = readlink("/proc/self/exe", buf, (size_t)max - 64);
+    if (n <= 0)
+        return 0;
+    buf[n] = 0;
+    char *slash = strrchr(buf, '/');
+    if (!slash)
+        return 0;
+    strcpy(slash + 1, rel);
+    return buf;
+}
+
+static const char *data_path(void)
+{
+    static char buf[1024];
+    const char *env = getenv("HIGGINS_DATA");
+    if (env && *env)
+        return env;
+    const char *p = near_exe("mozc.data", buf, (int)sizeof buf);       /* 配布 */
+    if (p && access(p, R_OK) == 0)
+        return p;
+    p = near_exe("vendor/hechima/mozc.data", buf, (int)sizeof buf);    /* 開発機 */
+    if (p && access(p, R_OK) == 0)
+        return p;
+    return "mozc.data";
+}
+
+/* 学習（segment.db / boundary.db / cform.db）とユーザー辞書の置き場。
+   ★PortMaster では起動スクリプトが HIGGINS_PROFILE を指す —— **置き場所を決めるのは
+     起動スクリプトの仕事**で、こちらは環境変数を見るだけ（Zenmai のセーブと同じ形）。 */
+static const char *profile_dir(void)
+{
+    static char buf[1024];
+    const char *env = getenv("HIGGINS_PROFILE");
+    const char *p = (env && *env) ? env : near_exe("conf", buf, (int)sizeof buf);
+    if (p)
+        mkdir(p, 0777);                    /* 無ければ作る */
+    return p ? p : "";
+}
+
 /* ---- 対話 ---- */
 
 /* 打ち終わった 1 文を ELIZA へ渡し、返事を積む。 */
@@ -276,7 +355,8 @@ static void send(const uint16_t *typed, int n)
 static void interactive(void)
 {
     int fields = 0, dirty = 1;
-    int ls_prev = 0, ls_rep = 0;
+    int ls_prev[4] = { 0, 0, 0, 0 };   /* ← → ↑ ↓ の前フレーム */
+    int ls_at[4] = { 0, 0, 0, 0 };     /* 次にリピートする時刻（fields） */
     uint16_t prev_rowchar = 0;
 
     gp_init(&gm);
@@ -339,27 +419,42 @@ static void interactive(void)
             dirty = 1;
         }
 
-        if ((edge & BTN_R3) && clen) { /* R3 = 打った行を捨てる */
-            clen = 0;
-            caret = 0;
-            gm.eagerSet = 0;
-            dirty = 1;
+        if (edge & BTN_R3) {
+            /* ★2 段にする（IME の作法）: 変換中はまず変換だけ取り消し、
+               もう一度でその行を捨てる。GamepadEngine の cancel は 1 段だが、
+               あちらはホスト（ブラウザ）が本文を持っているので事情が違う。 */
+            if (conv_active()) {
+                conv_cancel();
+                dirty = 1;
+            } else if (clen) {
+                clen = 0;
+                caret = 0;
+                gm.eagerSet = 0;
+                dirty = 1;
+            }
         }
 
         if ((edge & BTN_START) && !clen)   /* ★段階 E でオプション画面に置き換える */
             break;
 
-        if ((edge & BTN_L3) && clen) { /* L3 = 確定して ELIZA へ */
+        if ((edge & BTN_L3) && (clen || conv_active())) {   /* L3 = 確定して ELIZA へ */
             /* 遡っている最中の確定は、まず下端へ跳んでひと呼吸置く */
             if (view_px < hist_total() - body_h) {
                 view_bottom();
                 render_window();
                 wait_fields(18);
             }
-            static uint16_t typed[COMP_MAX];
-            const int typed_n = clen;
-            for (int i = 0; i < clen; i++)
-                typed[i] = comp[i];
+            static uint16_t typed[COMP_MAX * 2];
+            int typed_n;
+            if (conv_active()) {
+                /* ★確定と同時に学習する（hechima_learn）。境界を実際に伸縮した
+                   ときだけ境界学習に入るかは上流が判定するので、常に送ってよい。 */
+                typed_n = conv_commit(typed, (int)(sizeof typed / sizeof *typed));
+            } else {
+                typed_n = clen;
+                for (int i = 0; i < clen; i++)
+                    typed[i] = comp[i];
+            }
             clen = 0;
             caret = 0;
             gm.eagerSet = 0;
@@ -367,41 +462,90 @@ static void interactive(void)
             send(typed, typed_n);
         }
 
-        /* 左スティック縦 = 履歴を遡る。
-           ★**打っていないときだけ**（Zenmai は常に効く）。打っている最中の縦は
-             段階 D で変換（↓ 変換開始 / ↑ 前候補）に使うので、いま空けておく。 */
-        if (fields % 3 == 0 && clen == 0) {
-            if (axes[3] < 0x40)
-                view_scroll(-SCROLL_STEP);
-            if (axes[3] > 0xC0)
-                view_scroll(SCROLL_STEP);
-        }
-
-        /* 左スティック横 = キャレット移動（押し続けで連続） */
+        /* ---- 左スティック ----
+         * ★作法は GamepadEngine（labo の web/src/gamepad/engine.ts）に揃える:
+         *     ↓ 変換開始 / 次候補    ↑ 前候補    ←→ 文節移動
+         *     ★**RT + ←→ = 文節伸縮**（RT は「使用済み」にして「ん」を抑止する）
+         *   変換していないとき: ←→ キャレット移動 / ↑↓ 履歴を遡る（打っていないとき）
+         * ★リピートは**変換中はしない**（候補送りの暴走を防ぐ）。engine.ts と同じ判断。
+         *   間隔も同じ（400ms 待って 85ms ごと ＝ 1 field 17ms なので 24 / 5）。
+         */
         {
-            const int d = axes[2] < 0x40 ? -1 : axes[2] > 0xC0 ? 1 : 0;
-            int fire = 0;
-            if (d != ls_prev) {
-                ls_prev = d;
-                ls_rep = 0;
-                fire = d != 0;
-            } else if (d && ++ls_rep >= 6) {
-                ls_rep = 0;
-                fire = 1;
-            }
-            if (fire) {
-                const int nc = caret + d;
-                if (nc >= 0 && nc <= clen && nc != caret) {
-                    caret = nc;
-                    gm.eagerSet = 0;
-                    dirty = 1;
+            int ls[4];
+            ls_dirs(axes, ls);
+            const int rt = (p & BTN_R2) != 0;
+            for (int d = 0; d < 4; d++) {
+                int fire = 0;
+                if (!ls[d]) {
+                    ls_at[d] = 0;
+                } else if (!ls_prev[d]) {
+                    ls_at[d] = fields + LS_DELAY;
+                    fire = 1;                          /* エッジ */
+                } else if (!conv_active() && ls_at[d] && fields >= ls_at[d]) {
+                    ls_at[d] = fields + LS_INTERVAL;
+                    fire = 1;                          /* リピート */
+                }
+                ls_prev[d] = ls[d];
+                if (!fire)
+                    continue;
+                switch (d) {
+                case 0:                                /* ← */
+                    if (conv_active()) {
+                        if (rt) { conv_resize(-1); gp_consume_rt(&gm); }
+                        else conv_move(-1);
+                        dirty = 1;
+                    } else if (caret > 0) {
+                        caret--;
+                        gm.eagerSet = 0;
+                        dirty = 1;
+                    }
+                    break;
+                case 1:                                /* → */
+                    if (conv_active()) {
+                        if (rt) { conv_resize(+1); gp_consume_rt(&gm); }
+                        else conv_move(+1);
+                        dirty = 1;
+                    } else if (caret < clen) {
+                        caret++;
+                        gm.eagerSet = 0;
+                        dirty = 1;
+                    }
+                    break;
+                case 2:                                /* ↑ */
+                    if (conv_active()) {
+                        conv_prev();
+                        dirty = 1;
+                    } else if (!clen) {
+                        view_scroll(-SCROLL_STEP);
+                    }
+                    break;
+                case 3:                                /* ↓ */
+                    if (conv_active()) {
+                        conv_next();
+                        dirty = 1;
+                    } else if (clen) {
+                        /* ★変換開始。エンジンが無い / 変換できないときは
+                           何も起きない（かなのまま L3 で確定できる）。 */
+                        if (conv_start(comp, clen))
+                            dirty = 1;
+                    } else {
+                        view_scroll(SCROLL_STEP);
+                    }
+                    break;
                 }
             }
         }
 
         const uint16_t rowchar = gp_row_char(row);
         if (dirty || rowchar != prev_rowchar) {
-            draw_input(comp, clen, caret, rowchar);
+            if (conv_active()) {
+                uint16_t t[COMP_MAX * 2];
+                int fa = 0, fb = 0;
+                const int tn = conv_text(t, (int)(sizeof t / sizeof *t), &fa, &fb);
+                draw_input(t, tn, -1, rowchar, fa, fb);
+            } else {
+                draw_input(comp, clen, caret, rowchar, -1, -1);
+            }
             prev_rowchar = rowchar;
             dirty = 0;
         }
@@ -418,6 +562,10 @@ int main(void)
     body_h = BOX_Y - 8 - body_top;
     paint_screen(BG);
 
+    /* ★変換エンジン。無くても Higgins は動く（かなのまま ELIZA へ渡る）——
+       辞書 19MB を積めない機種でも起動はする、という形にしておく。 */
+    conv_init(data_path(), profile_dir());
+
     const int len = (int)(_binary_script_txt_end - _binary_script_txt_start);
     if (!hg_eliza_init(_binary_script_txt_start, len))
         say("スクリプトが読めない。", INK);
@@ -426,7 +574,7 @@ int main(void)
 
     view_bottom();
     render_window();
-    draw_input(0, 0, 0, 0);
+    draw_input(0, 0, 0, 0, -1, -1);
     gpu_display_on();
 
     pad_try_analog();
