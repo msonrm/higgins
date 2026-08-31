@@ -68,9 +68,18 @@ static GpMachine gm;
 enum { COMP_MAX = 96 };
 static uint16_t comp[COMP_MAX];
 static int clen, caret;
+/* ★`comp[0..fixed)` は**確定済み**（もう変換しない）。
+   IME でいう「確定した本文」にあたる —— Higgins には本文の欄が無く、打っている欄が
+   そのまま入力なので、境界をここで持つ。
+   ★これが無いと、確定したあとに続けて打って変換すると**確定済みの字まで
+     もう一度変換してしまう**（実機の指摘・2026-08-31）。 */
+static int fixed;
 
 static void comp_insert(const uint16_t *t, int tn, int replace)
 {
+    /* ★確定済みの中を編集したら、そこから先は未確定に戻す */
+    if (fixed > caret)
+        fixed = caret;
     int del = replace > caret ? caret : replace;
     for (int i = caret - del; i + del < clen; i++)
         comp[i] = comp[i + del];
@@ -96,6 +105,8 @@ static void comp_bs(void)
         comp[i] = comp[i + 1];
     clen--;
     caret--;
+    if (fixed > caret)
+        fixed = caret;
 }
 
 /* ---- 入力欄（複数行）----
@@ -145,10 +156,12 @@ static int box_layout(const uint16_t *s, int n, int *start)
 
 /* 打っている字と行インジケータ（ind = 0 なら箱だけ）を描いて送る。
  *   car < 0 … キャレットを描かない（変換中）
- *   fa < 0  … 下線を引かない。そうでなければ全体に薄い下線を引き、
- *             [fa, fb) の文節だけ太くする（★IME の「注目文節」の作法）
+ *   ua < 0  … 下線を引かない。そうでなければ **[ua, n) が未確定**として薄い下線を
+ *             引き、[fa, fb) の注目文節だけ太くする（★IME の作法）。
+ *             ★確定済み（[0, ua)）には引かない —— もう変換の対象ではない
  */
-static void draw_input(const uint16_t *s, int n, int car, uint16_t ind, int fa, int fb)
+static void draw_input(const uint16_t *s, int n, int car, uint16_t ind,
+                       int ua, int fa, int fb)
 {
     int start[BOX_LINES];
     const int nl = box_layout(s, n, start);
@@ -185,7 +198,7 @@ static void draw_input(const uint16_t *s, int n, int car, uint16_t ind, int fa, 
             if (x + glyph_w(s[i]) > BOX_X1)
                 break;                 /* ★draw24 は横の範囲を見ない */
             draw24(box, BOX_H, x, y, s[i], INK);
-            if (fa >= 0) {                 /* 変換中: 未確定の下線 */
+            if (ua >= 0 && i >= ua) {      /* 変換中: 未確定の下線 */
                 const int on = (i >= fa && i < fb);
                 const uint16_t col = on ? ACCENT : DIM;
                 for (int t = 0; t < (on ? 2 : 1); t++)
@@ -376,9 +389,12 @@ static void conv_accept(void)
 {
     uint16_t out[COMP_MAX * 2];
     const int n = conv_commit(out, (int)(sizeof out / sizeof *out));
-    clen = 0;
-    caret = 0;
+    /* ★変換していたのは comp[fixed..clen)。そこを確定文字列で置き換え、
+       ★**確定済みの境界を伸ばす**（ここから先だけが次の変換対象になる）。 */
+    clen = fixed;
+    caret = fixed;
     comp_insert(out, n, 0);
+    fixed = caret;
 }
 
 /* ---- 左スティックの向き ----
@@ -399,6 +415,97 @@ static void ls_dirs(const uint8_t axes[4], int out[4])
         out[dx < 0 ? 0 : 1] = 1;           /* ← → */
     else
         out[dy < 0 ? 2 : 3] = 1;           /* ↑ ↓ */
+}
+
+/* ---- メニュー ----
+ *
+ * ★Start で開く（実機の指摘・2026-08-31）。はじめは「長押しで終わる」形にしたが、
+ *   **実機では反応しなかった**（台本では 60 field で抜ける。原因は追えていない）。
+ *   ★どのみち**目に見える反応があるほうが確実**で、Zenmai も同じ形にしてある。
+ * ★いまは「つづける / やめる」だけ。**打ち方の絵とライセンスはここに足す。**
+ * ★地色は濃い藍（Zenmai の OPT_BG）—— 本文の外側だと地色だけで分かるので枠線は要らない、
+ *   という実機の判断があったが、こちらは板が小さいので枠も引く。
+ */
+#define OPT_BG   0x1C62
+#define OPT_EDGE 0x36B9
+
+static const char *const MENU[] = { "つづける", "やめる" };
+enum { MENU_N = 2, MENU_W = 320, MENU_ROW = 32, MENU_H = MENU_N * MENU_ROW + 24 };
+static uint16_t menubox[MENU_H][W];
+
+static void menu_draw(int sel)
+{
+    const int x = ((W - MENU_W) / 2) & ~1;
+    fill_rect(menubox, x, 0, MENU_W, MENU_H, OPT_BG);
+    for (int i = 0; i < MENU_W; i++)
+        menubox[0][x + i] = menubox[MENU_H - 1][x + i] = OPT_EDGE;
+    for (int j = 0; j < MENU_H; j++)
+        menubox[j][x] = menubox[j][x + MENU_W - 1] = OPT_EDGE;
+
+    for (int i = 0; i < MENU_N; i++) {
+        uint16_t t[32];
+        const int n = u8_to_u16(MENU[i], -1, t, 32);
+        int w = 0;
+        for (int k = 0; k < n; k++)
+            w += glyph_w(t[k]);
+        const int y = 12 + i * MENU_ROW;
+        /* ★選んでいる行は**候補窓と同じ反転**にする（帯 = ACCENT・字 = 地色）。
+           PANEL（本文より 3 段明るい灰）を敷いたら、藍の板の上では**暗く見えて
+           沈んだ** —— 同じ色でも、下に敷く色で意味が変わる。 */
+        if (i == sel)
+            fill_rect(menubox, x + 8, y - 4, MENU_W - 16, BASE + 8, ACCENT);
+        int cx = x + (MENU_W - w) / 2;
+        for (int k = 0; k < n; k++) {
+            draw24(menubox, MENU_H, cx, y, t[k], i == sel ? OPT_BG : INK);
+            cx += glyph_w(t[k]);
+        }
+    }
+    /* ★本文窓の中に収める（外へ出た画素は render_window() で消せない） */
+    upload_rect(x, body_top + (body_h - MENU_H) / 2, MENU_W, MENU_H, menubox);
+}
+
+/* 1 = やめる / 0 = つづける */
+static int menu_open(void)
+{
+    int sel = 0;
+    int prev = pad_read();
+    if (prev < 0)
+        prev = 0;
+    int lsp[4] = { 0, 0, 0, 0 };
+    render_window();                   /* 候補窓が開いていたら消す */
+    menu_draw(sel);
+
+    for (;;) {
+        wait_fields(1);
+        uint8_t axes[4];
+        const int p = pad_read_ex(axes);
+        if (p < 0)
+            continue;
+        const int edge = p & ~prev;
+        prev = p;
+
+        int moved = 0;
+        int ls[4];
+        ls_dirs(axes, ls);
+        if ((edge & BTN_UP) || (ls[2] && !lsp[2])) {
+            sel = (sel + MENU_N - 1) % MENU_N;
+            moved = 1;
+        }
+        if ((edge & BTN_DOWN) || (ls[3] && !lsp[3])) {
+            sel = (sel + 1) % MENU_N;
+            moved = 1;
+        }
+        for (int i = 0; i < 4; i++)
+            lsp[i] = ls[i];
+        if (moved)
+            menu_draw(sel);
+
+        /* ★どのフェイスボタンでも決まる（Zenmai と同じ作法。画面には書かない） */
+        if (edge & (BTN_CIR | BTN_X | BTN_TRI | BTN_SQ | BTN_L3))
+            return sel;
+        if (edge & BTN_START)          /* Start で開いて Start で閉じる */
+            return 0;
+    }
 }
 
 /* ---- 変換エンジンの置き場 ----
@@ -485,12 +592,12 @@ static void interactive(void)
     int ls_at[4] = { 0, 0, 0, 0 };     /* 次にリピートする時刻（fields） */
     int prev_conv = 0;                 /* 前の回に変換中だったか（候補窓を消すため） */
     int punct_n = 0, punct_at = 0;     /* 右スティック↓ の連打（句読点トグル） */
-    int start_hold = 0;                /* Start を押している長さ */
     uint16_t prev_rowchar = 0;
 
     gp_init(&gm);
     clen = 0;
     caret = 0;
+    fixed = 0;
     carry_over_pad();
 
     for (;;) {
@@ -587,19 +694,22 @@ static void interactive(void)
             } else if (clen) {
                 clen = 0;
                 caret = 0;
+                fixed = 0;
                 gm.eagerSet = 0;
                 dirty = 1;
             }
         }
 
-        /* ★Start は**長押し**（1 秒）で終わる。押した瞬間に終わると、打っている
-           途中の誤爆で全部消える（実機の指摘・2026-08-31）。
-           ★いずれオプション画面に置き換える（Zenmai と同じ形）。 */
-        if (p & BTN_START) {
-            if (++start_hold >= 60)
-                break;
-        } else {
-            start_hold = 0;
+        if (edge & BTN_START) {        /* ★Start = メニュー */
+            if (menu_open())
+                break;                 /* やめる */
+            /* 戻ったら本文を描き直し、押されたままのものを「もう見た」ことにする
+               （★忘れると、選んだボタンに応じた字が入った状態で再開する）。 */
+            render_window();
+            carry_over_pad();
+            prev_conv = 0;
+            dirty = 1;
+            continue;
         }
 
         if ((edge & BTN_L3) && conv_active()) {
@@ -621,6 +731,7 @@ static void interactive(void)
                 typed[i] = comp[i];
             clen = 0;
             caret = 0;
+            fixed = 0;
             gm.eagerSet = 0;
             dirty = 1;
             send(typed, typed_n);
@@ -687,10 +798,11 @@ static void interactive(void)
                     if (conv_active()) {
                         conv_next();
                         dirty = 1;
-                    } else if (clen) {
-                        /* ★変換開始。エンジンが無い / 変換できないときは
-                           何も起きない（かなのまま L3 で確定できる）。 */
-                        if (conv_start(comp, clen))
+                    } else if (clen > fixed) {
+                        /* ★**未確定の部分だけ**を変換する（comp[fixed..clen)）。
+                           エンジンが無い / 変換できないときは何も起きない
+                           （かなのまま確定できる）。 */
+                        if (conv_start(comp + fixed, clen - fixed))
                             dirty = 1;
                     } else {
                         view_scroll(SCROLL_STEP);
@@ -703,21 +815,30 @@ static void interactive(void)
         const uint16_t rowchar = gp_row_char(row);
         if (dirty || rowchar != prev_rowchar) {
             if (conv_active()) {
-                uint16_t t[COMP_MAX * 2];
+                /* ★確定済み（comp[0..fixed)）の後ろに変換中の文節を並べる。
+                   下線と候補窓の位置もそのぶんずらす。 */
+                uint16_t t[COMP_MAX * 3];
+                const int tmax = (int)(sizeof t / sizeof *t);
+                int tn = 0;
+                for (int i = 0; i < fixed && tn < tmax; i++)
+                    t[tn++] = comp[i];
                 int fa = 0, fb = 0;
-                const int tn = conv_text(t, (int)(sizeof t / sizeof *t), &fa, &fb);
+                const int cn = conv_text(t + tn, tmax - tn, &fa, &fb);
+                fa += tn;
+                fb += tn;
+                tn += cn;
                 /* ★毎回まず本文を描き戻す —— 候補窓は本文の上に開くので、
                    文節を移ると**前の窓が残る**（実測）。位置も大きさも変わるので、
                    前の矩形を覚えて消すより、下を描き直す方が確実で安い。 */
                 render_window();
-                draw_input(t, tn, -1, rowchar, fa, fb);
+                draw_input(t, tn, -1, rowchar, fixed, fa, fb);
                 draw_cands();          /* ★入力欄を描いたあと（focus_x を使う） */
             } else {
                 /* ★変換をやめた回は本文を描き直す —— 候補窓が本文の上に
                    開いているので、消すには下を描き戻すしかない。 */
                 if (prev_conv)
                     render_window();
-                draw_input(comp, clen, caret, rowchar, -1, -1);
+                draw_input(comp, clen, caret, rowchar, -1, -1, -1);
             }
             prev_conv = conv_active();
             prev_rowchar = rowchar;
@@ -748,7 +869,7 @@ int main(void)
 
     view_bottom();
     render_window();
-    draw_input(0, 0, 0, 0, -1, -1);
+    draw_input(0, 0, 0, 0, -1, -1, -1);
     gpu_display_on();
 
     pad_try_analog();
