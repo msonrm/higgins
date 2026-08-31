@@ -338,21 +338,27 @@ static void draw_cands(void)
             cx += glyph_w(c[t]);
         }
     }
-    /* ★ページ数と位置（「1/2」）を右下に小さく出す。
-       ページ送りは**次があることが見えない**ので、印が要る
-       （スクロールなら窓の中の動きで分かるが、ページは動かない）。
-       ★1 ページしか無いときは出さない —— 意味の無い数字は雑音。 */
+    /* ★ページの位置は**点列**で示す（hechima の `pageDots` と同じ語彙）——
+       ★**数えずに掴める**のが要点。12px の数字は実機で「小さすぎて読めない」と
+       言われた（2026-08-31）。
+       ★上流は 8 ページを超えたら数字へ倒すが、こちらは候補が 9 件までなので
+       ページは最大 2 —— 点列だけで足りる。
+       ★1 ページしか無いときは出さない（意味の無い印は雑音）。 */
     if (pages > 1) {
-        char nums[32];   /* ★8 だと -Wformat-truncation が出る（候補は 9 件までなので実際は 3 バイト） */
-        snprintf(nums, sizeof nums, "%d/%d", page + 1, pages);
-        uint16_t t[8];
-        const int tn = u8_to_u16(nums, -1, t, 8);
-        /* 12px の半角は 6px（glyph_w は 24px 用なので訊けない。glyph.h の注記と
-           同じ考え方 —— この大きさの半角数字は必ず 6px） */
-        int cx = x + boxw - CAND_PAD - tn * 6;
-        for (int i = 0; i < tn; i++) {
-            draw12(candbox, boxh, cx, boxh - 13, t[i], DIM);
-            cx += 6;
+        enum { DOT = 5, GAP = 4 };
+        const int dw = pages * DOT + (pages - 1) * GAP;
+        int dx = x + (boxw - dw) / 2;
+        const int dy = boxh - DOT - 5;
+        for (int i = 0; i < pages; i++) {
+            const uint16_t col = (i == page) ? ACCENT : DIM;
+            for (int j = 0; j < DOT; j++)
+                for (int k = 0; k < DOT; k++) {
+                    /* 角を落として丸に見せる */
+                    if ((j == 0 || j == DOT - 1) && (k == 0 || k == DOT - 1))
+                        continue;
+                    candbox[dy + j][dx + k] = col;
+                }
+            dx += DOT + GAP;
         }
     }
 
@@ -674,10 +680,17 @@ static void interactive(void)
                 dirty = 1;
             }
         }
-        if (rs == 1 && caret) {        /* ← BS */
-            comp_bs();
-            gm.eagerSet = 0;
-            dirty = 1;
+        if (rs == 1) {                 /* ← BS */
+            if (conv_active()) {
+                /* ★変換中は**未確定のかなに戻す**（普通の IME と同じ・実機の指摘）。
+                   1 字消すのではなく、変換そのものをやめる。 */
+                conv_cancel();
+                dirty = 1;
+            } else if (caret) {
+                comp_bs();
+                gm.eagerSet = 0;
+                dirty = 1;
+            }
         }
         if (rs == 3) {                 /* → 長音「ー」 */
             if (conv_active())
@@ -864,7 +877,10 @@ static void interactive(void)
                    開いているので、消すには下を描き戻すしかない。 */
                 if (prev_conv)
                     render_window();
-                draw_input(comp, clen, caret, rowchar, -1, -1, -1);
+                /* ★**未確定のかな（comp[fixed..clen)）にも下線を引く。**
+                   引かないと「どこまでが確定済みか」が、変換して初めて分かる
+                   （実機の指摘・2026-08-31）。注目文節はまだ無いので fa/fb は -1。 */
+                draw_input(comp, clen, caret, rowchar, fixed, -1, -1);
             }
             prev_conv = conv_active();
             prev_rowchar = rowchar;
