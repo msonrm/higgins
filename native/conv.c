@@ -275,16 +275,21 @@ int conv_start(const uint16_t *kana, int n)
     return 1;
 }
 
-/* ★端で止まる（巡回しない）。追加候補は「先頭のさらに前」にあるので、
-   巡回すると展開の途中で末尾へ飛んで迷子になる。 */
 void conv_next(void)
 {
     if (!g.active)
         return;
     const int f = g.focus;
     const int n = g.addl[f] + g.seg[f].ncand;
-    if (g.pick[f] + 1 < n)
+    if (g.pick[f] + 1 < n) {
         g.pick[f]++;
+        return;
+    }
+    /* ★一周したら最初の候補へ戻る。★そのとき追加候補（ひらがな・カタカナ）は
+       **畳む** —— あれは「↑ で呼び出すもの」なので、一周したら元の姿に戻るのが
+       自然（実機の指摘・2026-09-01）。 */
+    g.addl[f] = 0;
+    g.pick[f] = 0;
 }
 
 void conv_prev(void)
@@ -350,6 +355,11 @@ int conv_text(uint16_t *out, int max, int *from, int *to)
             *to = o;
     }
     return o;
+}
+
+int conv_addl_count(void)
+{
+    return g.active ? g.addl[g.focus] : 0;
 }
 
 int conv_cand_count(void)

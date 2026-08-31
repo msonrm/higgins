@@ -159,6 +159,47 @@ static int box_layout(const uint16_t *s, int n, int *start)
     return nl;
 }
 
+/* キャレットを 1 行ぶん上下へ。1 = 動いた / 0 = その方向に行がない。
+   ★欄が複数行になったので要る（実機の指摘・2026-09-01）—— 1 字ずつ ←→ で
+     戻るのは行が長いとつらい。
+   ★**同じ割り付け（box_layout）を使う**。別に数えると、見えている行と
+     動く先がずれる。 */
+static int caret_line_move(int d)
+{
+    int start[BOX_LINES];
+    const int nl = box_layout(comp, clen, start);
+    if (nl <= 1)
+        return 0;
+    int cl = 0;
+    for (int i = 0; i < nl; i++)
+        if (start[i] <= caret)
+            cl = i;
+    const int nc = cl + d;
+    if (nc < 0 || nc >= nl)
+        return 0;
+    /* いまの行内での横位置を測り、行った先で一番近いところへ落とす */
+    int x = 0;
+    for (int i = start[cl]; i < caret; i++)
+        x += glyph_w(comp[i]);
+    const int i0 = start[nc];
+    const int i1 = (nc + 1 < nl) ? start[nc + 1] : clen;
+    int cx = 0, pos = i0;
+    while (pos < i1 && cx + glyph_w(comp[pos]) / 2 < x) {
+        cx += glyph_w(comp[pos]);
+        pos++;
+    }
+    caret = pos;
+    return 1;
+}
+
+/* いまキャレットが最終行にいるか（↓ を変換開始に使うかの判断） */
+static int caret_on_last_line(void)
+{
+    int start[BOX_LINES];
+    const int nl = box_layout(comp, clen, start);
+    return nl <= 1 || caret >= start[nl - 1];
+}
+
 /* 打っている字と行インジケータ（ind = 0 なら箱だけ）を描いて送る。
  *   car < 0 … キャレットを描かない（変換中）
  *   ua < 0  … 下線を引かない。そうでなければ **[ua, n) が未確定**として薄い下線を
@@ -310,11 +351,20 @@ static void draw_cands(void)
 
     /* ★**ページ送り**にする（実機の指摘・2026-08-31）。1 件ずつ流れると、
        どれを見ているのか分からなくなる —— 候補は「並び」なので、位置が
-       動かないほうが読める。**5 件で 1 ページ**。 */
-    const int pages = (n + CAND_ROWS - 1) / CAND_ROWS;
-    const int page = sel / CAND_ROWS;
-    const int top = page * CAND_ROWS;
-    const int rows = (n - top < CAND_ROWS) ? n - top : CAND_ROWS;
+       動かないほうが読める。**5 件で 1 ページ**。
+       ★★追加候補（ひらがな・カタカナ）は**ページングの外**（実機の指摘・
+         2026-09-01）—— あれは「↑ で呼び出した別枠」なので常に上に積み、
+         窓がそのぶん伸びる（5 → 6 → 7 行）。混ぜるとページが動いて位置を見失う。 */
+    const int na = conv_addl_count();
+    const int nc = n - na;                  /* 本来の候補 */
+    const int in_addl = (sel < na);
+    const int ci = sel - na;                /* 本来の候補での位置（負 = 追加候補） */
+    const int pages = (nc + CAND_ROWS - 1) / CAND_ROWS;
+    const int page = in_addl ? 0 : ci / CAND_ROWS;
+    const int top = na + page * CAND_ROWS;  /* 表示リスト上の開始位置 */
+    const int crows = (nc - page * CAND_ROWS < CAND_ROWS)
+                    ? nc - page * CAND_ROWS : CAND_ROWS;
+    const int rows = na + crows;            /* 窓の行数 = 追加候補 + 1 ページ */
     /* ★ページ表示のぶんだけ下に足を出す（重ねると最後の候補と被る）。
        1 ページしか無いときは足も出さない。 */
     const int foot = (pages > 1) ? 14 : 0;
@@ -341,7 +391,8 @@ static void draw_cands(void)
         candbox[j][x] = candbox[j][x + boxw - 1] = ACCENT;
 
     for (int r = 0; r < rows; r++) {
-        const int i = top + r;
+        /* 上 na 行は追加候補、その下が本来の候補の 1 ページ */
+        const int i = (r < na) ? r : top + (r - na);
         const int cn = conv_cand(i, c, CONV_STR_MAX);
         const int ry = CAND_PAD + r * BASE;
         if (i == sel)                   /* 選んでいる 1 つを反転する */
@@ -852,6 +903,9 @@ static void interactive(void)
                     if (conv_active()) {
                         conv_prev();
                         dirty = 1;
+                    } else if (caret_line_move(-1)) {
+                        gm.eagerSet = 0;   /* ★行を移ったら eager の差し替えは切る */
+                        dirty = 1;
                     } else if (!clen) {
                         view_scroll(-SCROLL_STEP);
                     }
@@ -859,6 +913,13 @@ static void interactive(void)
                 case 3:                                /* ↓ */
                     if (conv_active()) {
                         conv_next();
+                        dirty = 1;
+                    } else if (!caret_on_last_line()) {
+                        /* ★上の行にいるなら、まず下の行へ戻す。最終行まで来たら
+                           従来どおり変換が始まる —— 打ち終わった直後は必ず
+                           最終行なので、変換の手数は変わらない。 */
+                        caret_line_move(1);
+                        gm.eagerSet = 0;
                         dirty = 1;
                     } else if (clen > fixed) {
                         /* ★**未確定の部分だけ**を変換する（comp[fixed..clen)）。

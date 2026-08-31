@@ -35,6 +35,11 @@ void conv_cancel(void);                 /* 変換をやめる */
 /* いまの見た目。focus の文節が [*from, *to) に来る（0 を渡してもよい）。 */
 int conv_text(uint16_t *out, int max, int *from, int *to);
 
+/* いま展開されている追加候補（ひらがな / カタカナ）の数（0..2）。
+   ★候補窓はこれを**ページングの外**に置く —— あの 2 つは「↑ で呼び出した別枠」で、
+     本来の候補の並びに混ぜるとページが動いて位置が分からなくなる。 */
+int conv_addl_count(void);
+
 /* いまの文節の候補を 1 つ取り出す（候補窓用）。戻り値 = 字数 / -1 = 無い */
 int conv_cand(int i, uint16_t *out, int max);
 int conv_cand_count(void);
