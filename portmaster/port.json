@@ -1,0 +1,29 @@
+{
+  "version": 2,
+  "name": "higgins.zip",
+  "items": [
+    "Higgins.sh",
+    "higgins"
+  ],
+  "items_opt": null,
+  "attr": {
+    "title": "Higgins",
+    "desc": "Weizenbaum's ELIZA (1966), running its DOCTOR script in Japanese, on a handheld with no keyboard. The engine is Anthony Hay's faithful C++ reimplementation, unmodified - the original 1966 script is what answers you. Japanese is typed with the gamepad alone: hold a consonant row with the left hand, tap a vowel with the right, and the kana appears; the left stick converts it to kanji through a bundled Mozc engine, with segment resize on RT + left stick. Named after Henry Higgins, who taught a flower girl to talk.",
+    "inst": "Extract to your ports folder. Nothing else is needed - the script, the dictionary and the font are all inside.",
+    "genres": [
+      "simulation"
+    ],
+    "porter": [
+      "msonrm"
+    ],
+    "image": {
+      "screenshot": "screenshot.png"
+    },
+    "rtr": true,
+    "runtime": null,
+    "reqs": [],
+    "arch": [
+      "aarch64"
+    ]
+  }
+}

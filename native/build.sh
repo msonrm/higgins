@@ -72,7 +72,8 @@ for sym in hechima_set_profile hechima_init hechima_convert hechima_resize hechi
 done
 # ★rpath は $ORIGIN 起点。開発機ではそのまま動き、PortMaster では
 #   起動スクリプトが LD_LIBRARY_PATH を通す（どちらでも解決できる）。
-LDFLAGS="$LDFLAGS -L$HECHIMA_DIR/$ARCH -lhechima -Wl,-rpath,\$ORIGIN/$HECHIMA_DIR/$ARCH"
+# ★配布では実行ファイルの隣、開発機では vendor/ の下。どちらでも解決できるよう両方。
+LDFLAGS="$LDFLAGS -L$HECHIMA_DIR/$ARCH -lhechima -Wl,-rpath,\$ORIGIN:\$ORIGIN/$HECHIMA_DIR/$ARCH"
 
 SRC_C="main.c text.c wakachi.c tsunagi.c conv.c content_stub.c render.c plat_sdl.c glyph_ft.c input.c"
 
@@ -103,6 +104,6 @@ $CXX -o test_reply "$OBJ/test_reply.o" "$OBJ/text.o" "$OBJ/wakachi.o" "$OBJ/tsun
 $CC $CFLAGS -c test_conv.c -o "$OBJ/test_conv.o"
 # shellcheck disable=SC2086
 $CC -o test_conv "$OBJ/test_conv.o" "$OBJ/conv.o" "$OBJ/text.o" \
-    -L$HECHIMA_DIR/$ARCH -lhechima -Wl,-rpath,\$ORIGIN/$HECHIMA_DIR/$ARCH
+    -L$HECHIMA_DIR/$ARCH -lhechima -Wl,-rpath,\$ORIGIN:\$ORIGIN/$HECHIMA_DIR/$ARCH
 
 echo "OK: $OUT ($(du -h "$OUT" | cut -f1)) / test_reply"

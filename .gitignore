@@ -35,3 +35,8 @@ native/test_reply
 native/vendor/hechima/
 native/conf/
 native/test_conv
+
+# PortMaster の配布物（生成物）。★screenshot.png だけは追跡する（PR に要る）。
+native/higgins.otf
+portmaster/higgins/
+portmaster/higgins.zip

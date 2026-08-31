@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<gameList>
+  <game>
+    <path>./Higgins.sh</path>
+    <name>Higgins</name>
+    <desc>Weizenbaum's ELIZA (1966) answering in Japanese, typed entirely with the gamepad - kana by chord, kanji through a bundled Mozc engine.</desc>
+    <releasedate>20260831T000000</releasedate>
+    <developer>msonrm</developer>
+    <publisher>msonrm</publisher>
+    <genre>Simulation</genre>
+    <image>./higgins/screenshot.png</image>
+  </game>
+</gameList>
