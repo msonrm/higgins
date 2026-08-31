@@ -110,6 +110,20 @@ static void comp_bs(void)
         fixed = caret;
 }
 
+/* キャレットを動かす。★動かしたら**未確定はそこで終わる**（`fixed = caret`）——
+ * ★置いていくと「右へ動かしただけ」で未確定が生まれ、確定済みの字が変換対象に
+ *   なってしまう（実機の指摘・2026-09-01）。
+ * ★言い換えると **キャレットは常に未確定の末尾にいる**、という約束にする。
+ *   未確定の中を動きたい場面は無い —— 打ち直しは BS、変換位置の調整は文節移動。
+ */
+static void caret_set(int pos)
+{
+    if (pos < 0 || pos > clen)
+        return;
+    caret = pos;
+    fixed = pos;
+}
+
 /* ---- 入力欄（複数行）----
  *
  * ★殻の `draw_strip`（1 行）は使わない。**Zork のコマンドは 1 行に収まるが、
@@ -188,7 +202,7 @@ static int caret_line_move(int d)
         cx += glyph_w(comp[pos]);
         pos++;
     }
-    caret = pos;
+    caret_set(pos);
     return 1;
 }
 
@@ -889,7 +903,7 @@ static void interactive(void)
                         else conv_move(-1);
                         dirty = 1;
                     } else if (caret > 0) {
-                        caret--;
+                        caret_set(caret - 1);
                         gm.eagerSet = 0;
                         dirty = 1;
                     }
@@ -900,7 +914,7 @@ static void interactive(void)
                         else conv_move(+1);
                         dirty = 1;
                     } else if (caret < clen) {
-                        caret++;
+                        caret_set(caret + 1);
                         gm.eagerSet = 0;
                         dirty = 1;
                     }
