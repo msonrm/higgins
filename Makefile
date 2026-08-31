@@ -7,7 +7,7 @@ CXXFLAGS ?= -std=c++20 -O1 -w
 BUILD     := build
 ELIZA_SRC := vendor/eliza/src/eliza.cpp
 
-.PHONY: all test test-ja test-ja-doctor test-web test-api clean
+.PHONY: all test test-ja test-ja-doctor test-web test-api test-native clean
 
 all: $(BUILD)/eliza
 
@@ -20,7 +20,7 @@ $(BUILD)/eliza: $(ELIZA_SRC)
 #   そこで 2 つ焼いて、両方の結果が揃ってはじめて緑とする:
 #     eliza-count  … 本番と同じロジック + 件数表示   → 「1 件以上あって 0 失敗」
 #     eliza-canary … それにわざと落ちるテストを 1 個 → 「1 失敗」（検査が生きている証拠）
-test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-web test-api
+test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-web test-api test-native
 	@printf '\n' | $(BUILD)/eliza-count | grep -qE '[1-9][0-9]* assertions' \
 	  || { echo 'FAIL: テストが 1 件も走っていない'; exit 1; }
 	@printf '\n' | $(BUILD)/eliza-count | grep -q '0 failures' \
@@ -83,6 +83,27 @@ test-api:
 	@node tools/api_check.mjs > /dev/null \
 	  || { echo 'FAIL: hechima / keymap-engine の API 名が合わない'; node tools/api_check.mjs; exit 1; }
 	@echo 'OK: hechima / keymap-engine の API 名は実在する'
+
+# ★native（PortMaster 版）の応答が CLI 版と一致するか。
+#   実機に載っているのと**同じ** wakachi / tsunagi / eliza_bridge を、SDL を開かずに
+#   走らせる（native/test_reply）。
+#   ★これが段階 B の芯 —— wakachi / tsunagi は Python・JS・C の **3 実装**になったので、
+#   片方の経路でしか通らない値は、もう片方で必ず落ちる。3 つをここで縛る。
+#   ※ SDL / FreeType が無い環境では飛ばす（1 つのシェルで書くこと ―― make は行ごとに
+#      別シェルなので、`|| exit 0` では次の行が止まらない）。
+test-native:
+	@if ! pkg-config --exists sdl2 freetype2 2>/dev/null; then \
+	    echo 'SKIP: sdl2 / freetype2 が無い'; \
+	else \
+	    mkdir -p $(BUILD); \
+	    sh native/build.sh > /dev/null; \
+	    ./native/test_reply < experiments/ja_doctor.in | grep -v '^$$' > $(BUILD)/native.out; \
+	    grep -v '^$$' experiments/ja_doctor.out | diff -u - $(BUILD)/native.out > /dev/null \
+	      || { echo 'FAIL: native 版が CLI 版と違う応答を返す'; \
+	           grep -v '^$$' experiments/ja_doctor.out | diff -u - $(BUILD)/native.out | head -20; \
+	           exit 1; }; \
+	    echo 'OK: native 版と CLI 版の応答が一致'; \
+	fi
 
 clean:
 	rm -rf $(BUILD)

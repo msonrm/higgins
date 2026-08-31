@@ -20,3 +20,13 @@ __pycache__/
 # wrangler の作業ディレクトリ
 .wrangler/
 dist/
+
+# native（PortMaster 版）のビルド成果物。
+# ★生成物は追跡しない —— 古い vocab.h や .o が残ると、直したのに挙動が変わらない、
+#   という形でいつか踏む（native/build.sh は毎回焼き直す）。
+native/obj/
+native/vocab.h
+native/script.txt
+native/higgins
+native/test_reply
+*.raw

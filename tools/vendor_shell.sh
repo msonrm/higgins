@@ -38,6 +38,10 @@ FILES=(
   render.h
   input.c
   input.h
+  # ★input.c が include している(かな表 10×5 と T9 表)。上流では gen_tables.py が
+  #   labo の gamepad-kana-table.ts から生成する。**生成物の側を pin する** ——
+  #   labo から生成し直す道を持つと、Higgins と Zenmai で表がずれても誰も気づけない。
+  tables.h
   card.h
   save_file.c
   test_glyph.c
