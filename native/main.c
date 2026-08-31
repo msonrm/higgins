@@ -194,12 +194,13 @@ static int caret_line_move(int d)
 
 /* 打っている字と行インジケータ（ind = 0 なら箱だけ）を描いて送る。
  *   car < 0 … キャレットを描かない（変換中）
- *   ua < 0  … 下線を引かない。そうでなければ **[ua, n) が未確定**として薄い下線を
+ *   ua < 0  … 下線を引かない。そうでなければ **[ua, ub) が未確定**として薄い下線を
  *             引き、[fa, fb) の注目文節だけ太くする（★IME の作法）。
- *             ★確定済み（[0, ua)）には引かない —— もう変換の対象ではない
+ *             ★確定済みには引かない —— もう変換の対象ではない。
+ *             ★未確定は**キャレットの手前まで**（その先は確定済みが続きうる）
  */
 static void draw_input(const uint16_t *s, int n, int car, uint16_t ind,
-                       int ua, int fa, int fb)
+                       int ua, int ub, int fa, int fb)
 {
     int start[BOX_LINES];
     const int nl = box_layout(s, n, start);
@@ -248,7 +249,7 @@ static void draw_input(const uint16_t *s, int n, int car, uint16_t ind,
             if (x + glyph_w(s[i]) > BOX_X1)
                 break;                 /* ★draw24 は横の範囲を見ない */
             draw24(box, boxh, x, y, s[i], INK);
-            if (ua >= 0 && i >= ua) {      /* 変換中: 未確定の下線 */
+            if (ua >= 0 && i >= ua && i < ub) {   /* 未確定の下線 */
                 const int on = (i >= fa && i < fb);
                 const uint16_t col = on ? ACCENT : DIM;
                 for (int t = 0; t < (on ? 2 : 1); t++)
@@ -299,7 +300,12 @@ static void draw_input(const uint16_t *s, int n, int car, uint16_t ind,
  *   （RGB555 の 1 段は 8/255 しかない。Zenmai が状態行で実測した値をそのまま使う）。
  */
 #define PANEL 0x10A5
-enum { CAND_ROWS = 5, CAND_PAD = 4, CAND_H = CAND_ROWS * BASE + CAND_PAD * 2 };
+enum { CAND_ROWS = CONV_PAGE, CAND_PAD = 4,
+       /* ★追加候補と本来の候補のあいだの隙間。線を字にくっつけると苦しく、
+          選択の帯（ACCENT）と同じ色なので**帯に飲まれて線が消える**
+          （実機の指摘・2026-09-01）。上下に 5px ずつ空けて真ん中に引く。 */
+       CAND_SEP = 11,
+       CAND_H = (CAND_ROWS + 2) * BASE + CAND_SEP + CAND_PAD * 2 + 14 };
 static uint16_t candbox[CAND_H][W];
 
 /* stride W のバッファの一部を転送する。
@@ -357,10 +363,11 @@ static void draw_cands(void)
     const int crows = (nc - page * CAND_ROWS < CAND_ROWS)
                     ? nc - page * CAND_ROWS : CAND_ROWS;
     const int rows = na + crows;            /* 窓の行数 = 追加候補 + 1 ページ */
+    const int sep = na ? CAND_SEP : 0;      /* 追加候補があるときだけ隙間 */
     /* ★ページ表示のぶんだけ下に足を出す（重ねると最後の候補と被る）。
        1 ページしか無いときは足も出さない。 */
     const int foot = (pages > 1) ? 14 : 0;
-    const int boxh = rows * BASE + CAND_PAD * 2 + foot;
+    const int boxh = rows * BASE + sep + CAND_PAD * 2 + foot;
 
     int x = focus_x - CAND_PAD;         /* 注目文節の左端に合わせる */
     if (x + boxw > W - MARGIN)
@@ -386,7 +393,7 @@ static void draw_cands(void)
         /* 上 na 行は追加候補、その下が本来の候補の 1 ページ */
         const int i = (r < na) ? r : top + (r - na);
         const int cn = conv_cand(i, c, CONV_STR_MAX);
-        const int ry = CAND_PAD + r * BASE;
+        const int ry = CAND_PAD + r * BASE + (r < na ? 0 : sep);
         if (i == sel)                   /* 選んでいる 1 つを反転する */
             fill_rect(candbox, x + 1, ry, boxw - 2, BASE, ACCENT);
         int cx = x + CAND_PAD * 2;
@@ -400,7 +407,7 @@ static void draw_cands(void)
     /* ★追加候補と本来の候補の**あいだに線**を引く（実機の指摘・2026-09-01）——
        別枠であることが目で分かるように。 */
     if (na > 0 && na < rows) {
-        const int ly = CAND_PAD + na * BASE;
+        const int ly = CAND_PAD + na * BASE + sep / 2;
         for (int i = 4; i < boxw - 4; i++)
             candbox[ly][x + i] = ACCENT;
     }
@@ -484,12 +491,11 @@ static void conv_accept(void)
 {
     uint16_t out[COMP_MAX * 2];
     const int n = conv_commit(out, (int)(sizeof out / sizeof *out));
-    /* ★変換していたのは comp[fixed..clen)。そこを確定文字列で置き換え、
-       ★**確定済みの境界を伸ばす**（ここから先だけが次の変換対象になる）。 */
-    clen = fixed;
-    caret = fixed;
-    comp_insert(out, n, 0);
-    fixed = caret;
+    /* ★変換していたのは **comp[fixed..caret)**。そこだけを確定文字列に差し替える。
+       ★以前は「fixed から末尾まで」を捨てていたので、**カーソルより後ろの字が
+         消えていた**（文字列の途中に打って変換したとき・実機の指摘 2026-09-01）。 */
+    comp_insert(out, n, caret - fixed);
+    fixed = caret;                     /* 挿入後の caret が新しい確定境界 */
 }
 
 /* ---- 左スティックの向き ----
@@ -824,11 +830,11 @@ static void interactive(void)
             conv_accept();
             gm.eagerSet = 0;
             dirty = 1;
-        } else if ((edge & BTN_L3) && clen > fixed) {
+        } else if ((edge & BTN_L3) && caret > fixed) {
             /* ★変換していない**未確定のかな**も、まず確定するだけ（下線が外れる）。
                送るのはもう一度押したとき —— 変換したときと同じ手数にする
                （実機の指摘・2026-09-01。打ってすぐ送られるのは直感的でない）。 */
-            fixed = clen;
+            fixed = caret;
             gm.eagerSet = 0;
             dirty = 1;
         } else if ((edge & BTN_L3) && clen) {               /* L3 = 確定して ELIZA へ */
@@ -914,13 +920,13 @@ static void interactive(void)
                     if (conv_active()) {
                         conv_next();
                         dirty = 1;
-                    } else if (clen > fixed) {
-                        /* ★**未確定の部分だけ**を変換する（comp[fixed..clen)）。
-                           ★条件は「未確定があるか」であって「最終行にいるか」では
-                             ない（実機の指摘・2026-09-01）—— 行で決めると、
-                             複数行の 1 行目にカーソルを置いて打ち始めたときに
-                             **変換できなくなる**。 */
-                        if (conv_start(comp + fixed, clen - fixed))
+                    } else if (caret > fixed) {
+                        /* ★**未確定の部分だけ**を変換する ＝ `comp[fixed..caret)`。
+                           ★末尾までではない（実機の指摘・2026-09-01）—— 文字列の
+                             途中に打ったとき、それ以降の確定済みまで巻き込む。
+                           ★条件も「未確定があるか」であって「最終行にいるか」では
+                             ない —— 行で決めると 1 行目で打ち始めたときに変換できない。 */
+                        if (conv_start(comp + fixed, caret - fixed))
                             dirty = 1;
                     } else if (caret_line_move(1)) {
                         /* 全部確定済みなら ↓ は行移動（↑ の対） */
@@ -937,7 +943,9 @@ static void interactive(void)
         const uint16_t rowchar = gp_row_char(row);
         if (dirty || rowchar != prev_rowchar) {
             if (conv_active()) {
-                /* ★確定済み（comp[0..fixed)）の後ろに変換中の文節を並べる。
+                /* ★表示は「確定済み ＋ 変換中の文節 ＋ **キャレットより後ろの
+                   確定済み**」。3 つ目を忘れると、文字列の途中で変換したときに
+                   後ろが消えて見える（実機の指摘・2026-09-01）。
                    下線と候補窓の位置もそのぶんずらす。 */
                 uint16_t t[COMP_MAX * 3];
                 const int tmax = (int)(sizeof t / sizeof *t);
@@ -945,15 +953,19 @@ static void interactive(void)
                 for (int i = 0; i < fixed && tn < tmax; i++)
                     t[tn++] = comp[i];
                 int fa = 0, fb = 0;
+                const int ua = tn;
                 const int cn = conv_text(t + tn, tmax - tn, &fa, &fb);
                 fa += tn;
                 fb += tn;
                 tn += cn;
+                const int ub = tn;
+                for (int i = caret; i < clen && tn < tmax; i++)
+                    t[tn++] = comp[i];
                 /* ★毎回まず本文を描き戻す —— 候補窓は本文の上に開くので、
                    文節を移ると**前の窓が残る**（実測）。位置も大きさも変わるので、
                    前の矩形を覚えて消すより、下を描き直す方が確実で安い。 */
                 render_window();
-                draw_input(t, tn, -1, rowchar, fixed, fa, fb);
+                draw_input(t, tn, -1, rowchar, ua, ub, fa, fb);
                 draw_cands();          /* ★入力欄を描いたあと（focus_x を使う） */
             } else {
                 /* ★変換をやめた回は本文を描き直す —— 候補窓が本文の上に
@@ -963,7 +975,7 @@ static void interactive(void)
                 /* ★**未確定のかな（comp[fixed..clen)）にも下線を引く。**
                    引かないと「どこまでが確定済みか」が、変換して初めて分かる
                    （実機の指摘・2026-08-31）。注目文節はまだ無いので fa/fb は -1。 */
-                draw_input(comp, clen, caret, rowchar, fixed, -1, -1);
+                draw_input(comp, clen, caret, rowchar, fixed, caret, -1, -1);
             }
             prev_conv = conv_active();
             prev_rowchar = rowchar;
@@ -994,7 +1006,7 @@ int main(void)
 
     view_bottom();
     render_window();
-    draw_input(0, 0, 0, 0, -1, -1, -1);
+    draw_input(0, 0, 0, 0, -1, -1, -1, -1);
     gpu_display_on();
 
     pad_try_analog();

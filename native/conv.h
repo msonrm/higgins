@@ -17,7 +17,11 @@
    （hechima の pageDots は 8 ページを超えたら数字に倒す作法）。
    ★表の実体は CONV_SEG_MAX × CONV_CAND_MAX × CONV_STR_MAX × 2 バイト。
      20 件でも 120KB ほどなので、この機械では気にしなくてよい。 */
-enum { CONV_SEG_MAX = 24, CONV_CAND_MAX = 20, CONV_STR_MAX = 128 };
+enum { CONV_SEG_MAX = 24, CONV_CAND_MAX = 20, CONV_STR_MAX = 128,
+       /* ★候補窓の 1 ページ。★UI の値だが conv 側も知る必要がある ——
+          「ページを移ったら追加候補を畳む」を conv_next が判断するため。
+          ★2 か所に書くとずれるので、正典はここ 1 つ。 */
+       CONV_PAGE = 5 };
 
 /* エンジンを起こす。1 = 使える */
 int conv_init(const char *data_path, const char *profile_dir);

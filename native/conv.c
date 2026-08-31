@@ -283,6 +283,13 @@ void conv_next(void)
     const int n = g.addl[f] + g.seg[f].ncand;
     if (g.pick[f] + 1 < n) {
         g.pick[f]++;
+        /* ★本来の候補の 2 ページ目に入ったら追加候補を畳む（実機の指摘・
+           2026-09-01）—— あれは 1 ページ目の上に呼び出した別枠なので、
+           ページを移ったら役目が終わる。畳んだぶん pick を詰める。 */
+        if (g.addl[f] && g.pick[f] - g.addl[f] >= CONV_PAGE) {
+            g.pick[f] -= g.addl[f];
+            g.addl[f] = 0;
+        }
         return;
     }
     /* ★一周したら最初の候補へ戻る。★そのとき追加候補（ひらがな・カタカナ）は
