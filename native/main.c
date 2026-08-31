@@ -120,9 +120,11 @@ static void comp_bs(void)
  * ★見た目（＞ / キャレット / 右端の印の箱）は `build_strip` から写した。
  */
 enum {
-    BOX_ROWS  = 3,                     /* 見えている行数。★固定 = 本文窓は動かない */
-    BOX_H     = BOX_ROWS * BASE,
-    BOX_Y     = H - 24 - BOX_H,        /* 下セーフ 24px は Zenmai と同じ */
+    /* ★行数は**打った量で伸びる**（1 行から始まり、3 行が上限。そこから先は流れる）。
+       実機の指摘（2026-09-01）—— 1 行しか打っていないのに 3 行ぶん空いているのは
+       落ち着かない。★本文窓はそのぶん伸び縮みする。 */
+    BOX_ROWS  = 3,                     /* 上限 */
+    BOX_H     = BOX_ROWS * BASE,       /* 器の最大（実際に描くのは box_rows 行） */
     BOX_X0    = MARGIN + 24,           /* ＞ のぶん右へ。★2 行目以降も揃える */
     /* 右端。★印の箱（左枠が W-MARGIN-27）に**3px の隙間を空けて**止める ——
        Zenmai の 1 行版は `W-MARGIN-24` まで描いていて箱と重なりうるが、
@@ -131,10 +133,12 @@ enum {
     BOX_LINES = 16,                    /* 折返しの上限（96 字なら 5 行で足りる） */
 };
 static uint16_t box[BOX_H][W];
+static int box_rows = 1;               /* いま見せている行数（1..BOX_ROWS） */
 
-/* ★注目文節の左上（画面座標）。候補窓をそこへ開くために draw_input が控える。
-   **図を描く側と位置を決める側で同じ割り付けを使う**ため、別に計算し直さない。 */
-static int focus_x = MARGIN, focus_row;
+/* ★注目文節の左上（**画面座標**）。候補窓をそこへ開くために draw_input が控える。
+   **図を描く側と位置を決める側で同じ割り付けを使う**ため、別に計算し直さない。
+   ★欄の高さが動くので、行番号ではなく y そのものを持つ。 */
+static int focus_x = MARGIN, focus_y;
 
 /* 折返して各行の開始位置を出す。戻り値 = 行数（必ず 1 以上）。 */
 static int box_layout(const uint16_t *s, int n, int *start)
@@ -167,24 +171,36 @@ static void draw_input(const uint16_t *s, int n, int car, uint16_t ind,
     int start[BOX_LINES];
     const int nl = box_layout(s, n, start);
 
+    /* ★打った量で欄を伸ばす（1 行から。上限 BOX_ROWS）。高さが変わったら
+       本文窓を作り直す —— 欄の下端は動かないので、上へ伸びる。 */
+    const int rows = (nl < BOX_ROWS) ? (nl > 0 ? nl : 1) : BOX_ROWS;
+    const int boxh = rows * BASE;
+    const int boxy = H - 24 - boxh;    /* 下セーフ 24px は Zenmai と同じ */
+    if (rows != box_rows) {
+        box_rows = rows;
+        body_h = boxy - 8 - body_top;
+        view_bottom();
+        render_window();
+    }
+
     int cl = 0;                        /* キャレット（変換中は focus）のある行 */
     for (int i = 0; i < nl; i++)
         if (start[i] <= (car < 0 ? fa : car))
             cl = i;
 
     /* 見える窓をキャレットに追従させる（★キャレットは常に見えている） */
-    int top = cl - (BOX_ROWS - 1);
-    if (top > nl - BOX_ROWS)
-        top = nl - BOX_ROWS;
+    int top = cl - (rows - 1);
+    if (top > nl - rows)
+        top = nl - rows;
     if (top < 0)
         top = 0;
 
-    fill_rows(box, 0, BOX_H, BG);
+    fill_rows(box, 0, boxh, BG);
     /* ★「＞」は窓の先頭行に置く（行が流れても目印が動かない）。
        ★上に隠れている行があるときは**薄く**する —— 遡れることが分かる最小の印。 */
-    draw24(box, BOX_H, MARGIN, 0, 0xFF1E, top ? DIM : ACCENT);
+    draw24(box, boxh, MARGIN, 0, 0xFF1E, top ? DIM : ACCENT);
 
-    for (int r = 0; r < BOX_ROWS && top + r < nl; r++) {
+    for (int r = 0; r < rows && top + r < nl; r++) {
         const int i0 = start[top + r];
         const int i1 = (top + r + 1 < nl) ? start[top + r + 1] : n;
         const int y = r * BASE;
@@ -194,11 +210,11 @@ static void draw_input(const uint16_t *s, int n, int car, uint16_t ind,
                 cx = x;
             if (fa >= 0 && i == fa) {
                 focus_x = x;
-                focus_row = r;
+                focus_y = boxy + r * BASE;
             }
             if (x + glyph_w(s[i]) > BOX_X1)
                 break;                 /* ★draw24 は横の範囲を見ない */
-            draw24(box, BOX_H, x, y, s[i], INK);
+            draw24(box, boxh, x, y, s[i], INK);
             if (ua >= 0 && i >= ua) {      /* 変換中: 未確定の下線 */
                 const int on = (i >= fa && i < fb);
                 const uint16_t col = on ? ACCENT : DIM;
@@ -229,15 +245,15 @@ static void draw_input(const uint16_t *s, int n, int car, uint16_t ind,
     if (iw < 24)
         iw = 24;
     const int kx = W - MARGIN - iw;
-    const int iy = BOX_H - BASE;
+    const int iy = boxh - BASE;
     for (int c = kx - 3; c <= kx + iw + 2; c++)
         box[iy][c] = box[iy + BASE - 1][c] = DIM;
     for (int r = 0; r < BASE; r++)
         box[iy + r][kx - 3] = box[iy + r][kx + iw + 2] = DIM;
     if (ind)
-        draw24(box, BOX_H, kx, iy, ind, ACCENT);
+        draw24(box, boxh, kx, iy, ind, ACCENT);
 
-    gp0_upload(0, BOX_Y, W, BOX_H, box[0]);
+    gp0_upload(0, boxy, W, boxh, box[0]);
 }
 
 /* ---- 候補窓 ----
@@ -310,7 +326,7 @@ static void draw_cands(void)
     if (x < MARGIN)
         x = MARGIN;
     x &= ~1;
-    int y = BOX_Y + focus_row * BASE - boxh - 4;
+    int y = focus_y - boxh - 4;
     /* ★**本文窓の中に収める。** はみ出した数 px は render_window() が描き戻せず、
        文節を移ったときに前の窓の枠がそこだけ残る（実測で 4px 残った）。 */
     if (y + boxh > body_top + body_h)
@@ -757,6 +773,13 @@ static void interactive(void)
             conv_accept();
             gm.eagerSet = 0;
             dirty = 1;
+        } else if ((edge & BTN_L3) && clen > fixed) {
+            /* ★変換していない**未確定のかな**も、まず確定するだけ（下線が外れる）。
+               送るのはもう一度押したとき —— 変換したときと同じ手数にする
+               （実機の指摘・2026-09-01。打ってすぐ送られるのは直感的でない）。 */
+            fixed = clen;
+            gm.eagerSet = 0;
+            dirty = 1;
         } else if ((edge & BTN_L3) && clen) {               /* L3 = 確定して ELIZA へ */
             /* 遡っている最中の確定は、まず下端へ跳んでひと呼吸置く */
             if (view_px < hist_total() - body_h) {
@@ -896,7 +919,7 @@ int main(void)
     /* ★入力欄を 3 行に広げたぶん、本文窓を縮める（render_init の既定を上書き）。
        ★欄の高さは**固定**なので、打っている途中に本文が動くことはない。 */
     body_top = TOP;
-    body_h = BOX_Y - 8 - body_top;
+    body_h = (H - 24 - BASE) - 8 - body_top;   /* 欄 1 行ぶんから始める */
     paint_screen(BG);
 
     /* ★変換エンジン。無くても Higgins は動く（かなのまま ELIZA へ渡る）——

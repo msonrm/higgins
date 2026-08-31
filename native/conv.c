@@ -19,7 +19,10 @@ static struct {
     ConvSeg seg[CONV_SEG_MAX];
     int nseg;
     int focus;
+    /* ★pick は**表示リスト上の位置**（追加候補を含む）。
+       表示リスト = [追加候補 addl 個][本来の候補 ncand 個] */
     int pick[CONV_SEG_MAX];
+    int addl[CONV_SEG_MAX];            /* 追加候補の展開数（0..2） */
     int active;
 } g;
 
@@ -185,6 +188,58 @@ static int parse_segments(const char *json)
     return g.nseg > 0;
 }
 
+/* ---- 追加候補（ひらがな / カタカナ）----
+ *
+ * ★hechima（`web/src/hechima/session.ts` の addl*）と同じ作法。
+ *   注目文節の**よみ**から作り、**候補の前に段階的に現れる** ——
+ *   1 番目で ↑ を押すと ひらがな、もう一度で カタカナ。
+ *   並びは `[カタカナ, ひらがな]` で、展開は**末尾から**（ひらがなが先に出る）。
+ * ★文字種の注釈（「カタカナ」）は出さない（実機の指摘・2026-08-31。要らない）。
+ */
+
+static uint16_t to_kata(uint16_t c)
+{
+    return (c >= 0x3041 && c <= 0x3096) ? (uint16_t)(c + 0x60) : c;
+}
+
+/* 追加候補は何個ありうるか（1 or 2）。よみが既に全部カタカナなら ひらがな だけ。 */
+static int addl_count(int f)
+{
+    const ConvSeg *s = &g.seg[f];
+    for (int i = 0; i < s->key_n; i++)
+        if (s->key[i] >= 0x3041 && s->key[i] <= 0x3096)
+            return 2;                  /* ひらがなが混じる = カタカナ候補が別物になる */
+    return 1;
+}
+
+/* 表示リストの i 番目（i < addl）の追加候補を取り出す */
+static int addl_at(int f, int i, uint16_t *out, int max)
+{
+    const ConvSeg *s = &g.seg[f];
+    const int n = addl_count(f);
+    const int k = (n - g.addl[f]) + i; /* 0 = カタカナ / 1 = ひらがな */
+    const int kata = (n == 2 && k == 0);
+    int len = s->key_n < max ? s->key_n : max;
+    for (int t = 0; t < len; t++)
+        out[t] = kata ? to_kata(s->key[t]) : s->key[t];
+    return len;
+}
+
+/* 文節 f でいま選ばれている文字列 */
+static int seg_selected(int f, uint16_t *out, int max)
+{
+    const ConvSeg *s = &g.seg[f];
+    const int p = g.pick[f];
+    if (p < g.addl[f])
+        return addl_at(f, p, out, max);
+    const int k = p - g.addl[f];
+    const int ki = (k >= 0 && k < s->ncand) ? k : 0;
+    int n = s->cand_n[ki] < max ? s->cand_n[ki] : max;
+    for (int t = 0; t < n; t++)
+        out[t] = s->cand[ki][t];
+    return n;
+}
+
 /* ---- 起動 ---- */
 
 int conv_init(const char *data_path, const char *profile_dir)
@@ -214,28 +269,37 @@ int conv_start(const uint16_t *kana, int n)
         g.kana[i] = kana[i];
     g.kana_n = n;
     for (int i = 0; i < CONV_SEG_MAX; i++)
-        g.pick[i] = 0;
+        g.pick[i] = g.addl[i] = 0;
     g.focus = 0;
     g.active = 1;
     return 1;
 }
 
+/* ★端で止まる（巡回しない）。追加候補は「先頭のさらに前」にあるので、
+   巡回すると展開の途中で末尾へ飛んで迷子になる。 */
 void conv_next(void)
 {
     if (!g.active)
         return;
-    const ConvSeg *s = &g.seg[g.focus];
-    if (s->ncand > 0)
-        g.pick[g.focus] = (g.pick[g.focus] + 1) % s->ncand;
+    const int f = g.focus;
+    const int n = g.addl[f] + g.seg[f].ncand;
+    if (g.pick[f] + 1 < n)
+        g.pick[f]++;
 }
 
 void conv_prev(void)
 {
     if (!g.active)
         return;
-    const ConvSeg *s = &g.seg[g.focus];
-    if (s->ncand > 0)
-        g.pick[g.focus] = (g.pick[g.focus] + s->ncand - 1) % s->ncand;
+    const int f = g.focus;
+    if (g.pick[f] > 0) {
+        g.pick[f]--;
+        return;
+    }
+    /* ★先頭でさらに ↑ = 追加候補（ひらがな → カタカナ）を段階展開。
+       pick は 0 のまま ＝ 新しく現れた先頭を指す。 */
+    if (g.addl[f] < addl_count(f))
+        g.addl[f]++;
 }
 
 void conv_move(int d)
@@ -259,7 +323,7 @@ int conv_resize(int d)
         return 0;
     /* ★文節の切り方が変わったので選び直し（TS 版も同じ）。focus は残す */
     for (int i = 0; i < CONV_SEG_MAX; i++)
-        g.pick[i] = 0;
+        g.pick[i] = g.addl[i] = 0;
     if (g.focus >= g.nseg)
         g.focus = g.nseg - 1;
     return 1;
@@ -276,12 +340,12 @@ int conv_text(uint16_t *out, int max, int *from, int *to)
 {
     int o = 0;
     for (int i = 0; i < g.nseg; i++) {
-        const ConvSeg *s = &g.seg[i];
-        const int pi = g.pick[i] < s->ncand ? g.pick[i] : 0;
+        uint16_t buf[CONV_STR_MAX];
+        const int n = seg_selected(i, buf, CONV_STR_MAX);
         if (i == g.focus && from)
             *from = o;
-        for (int t = 0; t < s->cand_n[pi] && o < max; t++)
-            out[o++] = s->cand[pi][t];
+        for (int t = 0; t < n && o < max; t++)
+            out[o++] = buf[t];
         if (i == g.focus && to)
             *to = o;
     }
@@ -290,7 +354,7 @@ int conv_text(uint16_t *out, int max, int *from, int *to)
 
 int conv_cand_count(void)
 {
-    return g.active ? g.seg[g.focus].ncand : 0;
+    return g.active ? g.addl[g.focus] + g.seg[g.focus].ncand : 0;
 }
 
 int conv_cand_index(void)
@@ -300,14 +364,16 @@ int conv_cand_index(void)
 
 int conv_cand(int i, uint16_t *out, int max)
 {
-    if (!g.active || i < 0 || i >= g.seg[g.focus].ncand)
+    if (!g.active || i < 0 || i >= conv_cand_count())
         return -1;
-    const ConvSeg *s = &g.seg[g.focus];
-    int n = s->cand_n[i];
-    if (n > max)
-        n = max;
+    const int f = g.focus;
+    if (i < g.addl[f])
+        return addl_at(f, i, out, max);
+    const ConvSeg *s = &g.seg[f];
+    const int k = i - g.addl[f];
+    int n = s->cand_n[k] < max ? s->cand_n[k] : max;
     for (int t = 0; t < n; t++)
-        out[t] = s->cand[i][t];
+        out[t] = s->cand[k][t];
     return n;
 }
 
@@ -324,14 +390,13 @@ int conv_commit(uint16_t *out, int max)
     u16_to_u8(g.kana, g.kana_n, kana, (int)sizeof kana);
     int so = 0, vo = 0;
     for (int i = 0; i < g.nseg; i++) {
-        const ConvSeg *s = &g.seg[i];
-        const int pi = g.pick[i] < s->ncand ? g.pick[i] : 0;
+        uint16_t buf[CONV_STR_MAX];
+        const int n = seg_selected(i, buf, CONV_STR_MAX);
         so += snprintf(sizes + so, sizeof sizes - (size_t)so, "%s%d",
-                       i ? "," : "", s->key_n);
+                       i ? "," : "", g.seg[i].key_n);
         if (i && vo < (int)sizeof values - 1)
             values[vo++] = '\t';
-        vo += u16_to_u8(s->cand[pi], s->cand_n[pi], values + vo,
-                        (int)sizeof values - vo);
+        vo += u16_to_u8(buf, n, values + vo, (int)sizeof values - vo);
     }
     hechima_learn(kana, sizes, values);
 
