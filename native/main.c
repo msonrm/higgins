@@ -120,6 +120,10 @@ enum {
 };
 static uint16_t box[BOX_H][W];
 
+/* ★注目文節の左上（画面座標）。候補窓をそこへ開くために draw_input が控える。
+   **図を描く側と位置を決める側で同じ割り付けを使う**ため、別に計算し直さない。 */
+static int focus_x = MARGIN, focus_row;
+
 /* 折返して各行の開始位置を出す。戻り値 = 行数（必ず 1 以上）。 */
 static int box_layout(const uint16_t *s, int n, int *start)
 {
@@ -174,6 +178,10 @@ static void draw_input(const uint16_t *s, int n, int car, uint16_t ind, int fa, 
         for (int i = i0; i < i1; i++) {
             if (i == car)
                 cx = x;
+            if (fa >= 0 && i == fa) {
+                focus_x = x;
+                focus_row = r;
+            }
             if (x + glyph_w(s[i]) > BOX_X1)
                 break;                 /* ★draw24 は横の範囲を見ない */
             draw24(box, BOX_H, x, y, s[i], INK);
@@ -213,6 +221,104 @@ static void draw_input(const uint16_t *s, int n, int car, uint16_t ind, int fa, 
         draw24(box, BOX_H, kx, 0, ind, ACCENT);
 
     gp0_upload(0, BOX_Y, W, BOX_H, box[0]);
+}
+
+/* ---- 候補窓 ----
+ *
+ * ★変換中だけ、注目文節の左上に開く（IME の作法 —— 変換している場所の近くに出す）。
+ * ★**番号は振らない。** ゲームパッドには数字キーが無いので番号では選べず、
+ *   選んでいる 1 つを反転させれば「何番目か」も同時に伝わる。
+ * ★5 行の窓で、選んでいる候補を追って流れる（入力欄と同じ作法）。
+ * ★地色は本文より 3 段明るい藍。1 段では実機でまず見分けが付かない
+ *   （RGB555 の 1 段は 8/255 しかない。Zenmai が状態行で実測した値をそのまま使う）。
+ */
+#define PANEL 0x10A5
+enum { CAND_ROWS = 5, CAND_PAD = 4, CAND_H = CAND_ROWS * BASE + CAND_PAD * 2 };
+static uint16_t candbox[CAND_H][W];
+
+/* stride W のバッファの一部を転送する。
+   ★`gp0_upload` は **w×h の連続バッファ**を前提にしている（PS1 では VRAM への
+     転送コマンドそのもの）ので、幅の一部だけ送りたいときは**行ごとに呼ぶ**。
+   ★w は偶数にすること（PS1 側は 32bit 単位で流す）。 */
+static void upload_rect(int x, int y, int w, int h, uint16_t (*buf)[W])
+{
+    for (int j = 0; j < h; j++)
+        gp0_upload(x, y + j, w, 1, &buf[j][x]);
+}
+
+static void fill_rect(uint16_t (*buf)[W], int x, int y, int w, int h, uint16_t col)
+{
+    for (int j = 0; j < h; j++)
+        for (int i = 0; i < w; i++)
+            buf[y + j][x + i] = col;
+}
+
+static void draw_cands(void)
+{
+    const int n = conv_cand_count();
+    if (n <= 0)
+        return;
+    const int sel = conv_cand_index();
+    uint16_t c[CONV_STR_MAX];
+
+    int w = 0;                          /* 一番長い候補に合わせる */
+    for (int i = 0; i < n; i++) {
+        const int cn = conv_cand(i, c, CONV_STR_MAX);
+        int cw = 0;
+        for (int t = 0; t < cn; t++)
+            cw += glyph_w(c[t]);
+        if (cw > w)
+            w = cw;
+    }
+    int boxw = w + CAND_PAD * 6;
+    if (boxw > W - MARGIN * 2)
+        boxw = W - MARGIN * 2;
+    boxw = (boxw + 1) & ~1;             /* ★偶数（plat.h の契約） */
+
+    const int rows = n < CAND_ROWS ? n : CAND_ROWS;
+    const int boxh = rows * BASE + CAND_PAD * 2;
+
+    int top = sel - (rows - 1);         /* 選んでいるものを追う */
+    if (top > n - rows)
+        top = n - rows;
+    if (top < 0)
+        top = 0;
+
+    int x = focus_x - CAND_PAD;         /* 注目文節の左端に合わせる */
+    if (x + boxw > W - MARGIN)
+        x = W - MARGIN - boxw;
+    if (x < MARGIN)
+        x = MARGIN;
+    x &= ~1;
+    int y = BOX_Y + focus_row * BASE - boxh - 4;
+    /* ★**本文窓の中に収める。** はみ出した数 px は render_window() が描き戻せず、
+       文節を移ったときに前の窓の枠がそこだけ残る（実測で 4px 残った）。 */
+    if (y + boxh > body_top + body_h)
+        y = body_top + body_h - boxh;
+    if (y < body_top)
+        y = body_top;
+
+    fill_rect(candbox, x, 0, boxw, boxh, PANEL);
+    for (int i = 0; i < boxw; i++)      /* 枠 */
+        candbox[0][x + i] = candbox[boxh - 1][x + i] = ACCENT;
+    for (int j = 0; j < boxh; j++)
+        candbox[j][x] = candbox[j][x + boxw - 1] = ACCENT;
+
+    for (int r = 0; r < rows; r++) {
+        const int i = top + r;
+        const int cn = conv_cand(i, c, CONV_STR_MAX);
+        const int ry = CAND_PAD + r * BASE;
+        if (i == sel)                   /* 選んでいる 1 つを反転する */
+            fill_rect(candbox, x + 1, ry, boxw - 2, BASE, ACCENT);
+        int cx = x + CAND_PAD * 2;
+        for (int t = 0; t < cn; t++) {
+            if (cx + glyph_w(c[t]) > x + boxw - CAND_PAD)
+                break;
+            draw24(candbox, boxh, cx, ry, c[t], i == sel ? BG : INK);
+            cx += glyph_w(c[t]);
+        }
+    }
+    upload_rect(x, y, boxw, boxh, candbox);
 }
 
 /* ---- パッド → 行 / 段 ----
@@ -357,6 +463,7 @@ static void interactive(void)
     int fields = 0, dirty = 1;
     int ls_prev[4] = { 0, 0, 0, 0 };   /* ← → ↑ ↓ の前フレーム */
     int ls_at[4] = { 0, 0, 0, 0 };     /* 次にリピートする時刻（fields） */
+    int prev_conv = 0;                 /* 前の回に変換中だったか（候補窓を消すため） */
     uint16_t prev_rowchar = 0;
 
     gp_init(&gm);
@@ -542,10 +649,20 @@ static void interactive(void)
                 uint16_t t[COMP_MAX * 2];
                 int fa = 0, fb = 0;
                 const int tn = conv_text(t, (int)(sizeof t / sizeof *t), &fa, &fb);
+                /* ★毎回まず本文を描き戻す —— 候補窓は本文の上に開くので、
+                   文節を移ると**前の窓が残る**（実測）。位置も大きさも変わるので、
+                   前の矩形を覚えて消すより、下を描き直す方が確実で安い。 */
+                render_window();
                 draw_input(t, tn, -1, rowchar, fa, fb);
+                draw_cands();          /* ★入力欄を描いたあと（focus_x を使う） */
             } else {
+                /* ★変換をやめた回は本文を描き直す —— 候補窓が本文の上に
+                   開いているので、消すには下を描き戻すしかない。 */
+                if (prev_conv)
+                    render_window();
                 draw_input(comp, clen, caret, rowchar, -1, -1);
             }
+            prev_conv = conv_active();
             prev_rowchar = rowchar;
             dirty = 0;
         }

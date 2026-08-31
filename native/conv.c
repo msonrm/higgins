@@ -153,9 +153,21 @@ static int parse_segments(const char *json)
                     if (!q)
                         return 0;
                     if (s && s->ncand < CONV_CAND_MAX) {
-                        s->cand_n[s->ncand] =
+                        const int cn =
                             u8_to_u16(buf, bl, s->cand[s->ncand], CONV_STR_MAX);
-                        s->ncand++;
+                        /* ★BMP の外（絵文字など）を含む候補は**捨てる**。
+                           殻は字を uint16_t で持つので描けず、u8_to_u16 が
+                           U+FFFD に落としている ＝ 並べても豆腐になる。
+                           ★**出せない候補を候補として並べるのは嘘**
+                           （使っていないフォントを名乗るのと同じ形）。
+                           mozc の「さびしい」には実際に絵文字が入っていた。 */
+                        int ok = cn > 0;
+                        for (int t = 0; t < cn && ok; t++)
+                            ok = s->cand[s->ncand][t] != 0xFFFD;
+                        if (ok) {
+                            s->cand_n[s->ncand] = cn;
+                            s->ncand++;
+                        }
                     }
                 }
                 if (*q == ']')
