@@ -1,4 +1,6 @@
-/* gen_tables.py が gamepad-kana-table.ts から生成。手で編集しない */
+/* gen_tables.py が labo の gamepad-kana-table.ts から生成。手で編集しない。
+   ★Zenmai の tables.h とは違う —— あちらは Zork 用に や行の「」を潰し、
+   わ行を組み替え、ゔ を落としてある。こちらは正典そのまま。 */
 static const unsigned short GP_KANA[10][5] = {
   {0x3042,0x3044,0x3046,0x3048,0x304A},
   {0x304B,0x304D,0x304F,0x3051,0x3053},
@@ -7,9 +9,9 @@ static const unsigned short GP_KANA[10][5] = {
   {0x306A,0x306B,0x306C,0x306D,0x306E},
   {0x306F,0x3072,0x3075,0x3078,0x307B},
   {0x307E,0x307F,0x3080,0x3081,0x3082},
-  {0x3084,0,0x3086,0,0x3088},
+  {0x3084,0x300C,0x3086,0x300D,0x3088},
   {0x3089,0x308A,0x308B,0x308C,0x308D},
-  {0x308F,0x3092,0x3093,0x30FC,0},
+  {0x308F,0x3090,0xFF1F,0x3091,0x3092},
 };
 static const unsigned short GP_ENG[10][5] = {
   {0x0031,0x0028,0x003F,0x0029,0x0021},
@@ -24,7 +26,7 @@ static const unsigned short GP_ENG[10][5] = {
   {0x0030,0x0040,0x0023,0x002D,0x005F},
 };
 typedef struct { unsigned short from; unsigned short to[2]; } GpYouon;
-enum { GP_YOUON_N = 45, GP_DAKU_N = 20, GP_HANDAKU_N = 5 };
+enum { GP_YOUON_N = 45, GP_DAKU_N = 21, GP_HANDAKU_N = 5 };
 static const GpYouon GP_YOUON[GP_YOUON_N] = {
   {0x3042, {0x3041,0}},
   {0x3044, {0x3043,0}},
@@ -94,6 +96,7 @@ static const GpAB GP_DAKU[GP_DAKU_N] = {
   {0x3075, 0x3076},
   {0x3078, 0x3079},
   {0x307B, 0x307C},
+  {0x3046, 0x3094},
 };
 static const GpAB GP_HANDAKU[GP_HANDAKU_N] = {
   {0x306F, 0x3071},

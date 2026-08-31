@@ -29,6 +29,13 @@ DST="$(cd "$(dirname "$0")/.." && pwd)/native"
 
 # 取り込むもの。★main.c / cmd.c / translate.c / content*.c は **Zenmai 固有**なので
 #   取らない（あれは Zork の話）。Higgins は自分の main を書いて殻に載せる。
+#
+# ★★**tables.h（かな表）も取らない。** input.c が include しているので一度は
+#   取り込んだが、あれは**Zenmai が Zork 用に歪めた表**だった —— や行の「」を空枠に
+#   潰し、わ行を わ/を/ん/ー に組み替え、ゔ を落としてある（gen_tables.py の
+#   「PS1 適応」）。Higgins は自由文を打つのでどれも要らない。
+#   ★**同じ正典から自分で焼く**（native/gen_tables.py）。
+#   「上流の生成物」と「上流が加工した生成物」は違う ―― 実機で発覚（2026-08-31）。
 FILES=(
   plat.h
   plat_sdl.c
@@ -38,10 +45,6 @@ FILES=(
   render.h
   input.c
   input.h
-  # ★input.c が include している(かな表 10×5 と T9 表)。上流では gen_tables.py が
-  #   labo の gamepad-kana-table.ts から生成する。**生成物の側を pin する** ——
-  #   labo から生成し直す道を持つと、Higgins と Zenmai で表がずれても誰も気づけない。
-  tables.h
   card.h
   save_file.c
   test_glyph.c

@@ -208,17 +208,20 @@ static void draw_input(const uint16_t *s, int n, int car, uint16_t ind, int fa, 
         }
     }
 
-    /* 行インジケータの箱（★1 行目の右端。build_strip と同じ形） */
+    /* 行インジケータの箱。
+       ★**右下の角**に置く（実機の指摘・2026-08-31）—— Zenmai は欄が 1 行しか
+         無かったので右端＝右下だったが、3 行になると 1 行目は「中途半端に上」。 */
     int iw = ind ? glyph_w(ind) : 0;
     if (iw < 24)
         iw = 24;
     const int kx = W - MARGIN - iw;
+    const int iy = BOX_H - BASE;
     for (int c = kx - 3; c <= kx + iw + 2; c++)
-        box[0][c] = box[BASE - 1][c] = DIM;
+        box[iy][c] = box[iy + BASE - 1][c] = DIM;
     for (int r = 0; r < BASE; r++)
-        box[r][kx - 3] = box[r][kx + iw + 2] = DIM;
+        box[iy + r][kx - 3] = box[iy + r][kx + iw + 2] = DIM;
     if (ind)
-        draw24(box, BOX_H, kx, 0, ind, ACCENT);
+        draw24(box, BOX_H, kx, iy, ind, ACCENT);
 
     gp0_upload(0, BOX_Y, W, BOX_H, box[0]);
 }
@@ -362,11 +365,28 @@ static void carry_over_pad(void)
     gp_sync_prev(&gm, &f);
 }
 
+/* 変換を確定して、打っている字（comp[]）へ移す。
+ * ★**確定と送信を分ける**（実機の指摘・2026-08-31）—— IME の作法では 1 回目の
+ *   確定で未確定が消え、送るのはもう一度。変換したまま送ると打ち直す隙が無い。
+ * ★変換中に打ち始めたときも、まずこれを通す（その時点の選択で確定して続きを打つ）。
+ * ★gm（かなの状態機械）はここでは触らない —— 打鍵の途中に呼ばれるので、
+ *   eager の差し替え位置を壊してしまう。
+ */
+static void conv_accept(void)
+{
+    uint16_t out[COMP_MAX * 2];
+    const int n = conv_commit(out, (int)(sizeof out / sizeof *out));
+    clen = 0;
+    caret = 0;
+    comp_insert(out, n, 0);
+}
+
 /* ---- 左スティックの向き ----
  * ★**大きい方の軸だけを見る**（engine.ts の dominant と同じ）。斜めに倒したときに
  *   2 方向が同時に発火すると、変換中は「候補送り + 文節移動」が一度に起きる。
  * 閾値 0x40 は右スティックのフリック（render.c の pad_rstick_flick）に合わせた。 */
-enum { LS_DELAY = 24, LS_INTERVAL = 5 };   /* 400ms / 85ms（1 field ≒ 17ms） */
+enum { LS_DELAY = 24, LS_INTERVAL = 5,     /* 400ms / 85ms（1 field ≒ 17ms） */
+       PUNCT_WINDOW = 35 };                /* 600ms（GamepadEngine と同じ） */
 
 static void ls_dirs(const uint8_t axes[4], int out[4])
 {
@@ -464,6 +484,8 @@ static void interactive(void)
     int ls_prev[4] = { 0, 0, 0, 0 };   /* ← → ↑ ↓ の前フレーム */
     int ls_at[4] = { 0, 0, 0, 0 };     /* 次にリピートする時刻（fields） */
     int prev_conv = 0;                 /* 前の回に変換中だったか（候補窓を消すため） */
+    int punct_n = 0, punct_at = 0;     /* 右スティック↓ の連打（句読点トグル） */
+    int start_hold = 0;                /* Start を押している長さ */
     uint16_t prev_rowchar = 0;
 
     gp_init(&gm);
@@ -489,6 +511,10 @@ static void interactive(void)
         GpAction a[4];
         const int an = gp_step(&gm, 0 /* japanese */, &f, a);
         for (int i = 0; i < an; i++) {
+            /* ★変換中に打ち始めたら、その時点の選択で確定してから入れる
+               （実機の指摘・2026-08-31）。IME の作法。 */
+            if (conv_active())
+                conv_accept();
             if (a[i].type == GPA_KANA) {
                 comp_insert(a[i].text, a[i].tlen, a[i].replace);
             } else {                   /* GPA_YOUON（後置の拗音シフト） */
@@ -521,8 +547,33 @@ static void interactive(void)
             dirty = 1;
         }
         if (rs == 3) {                 /* → 長音「ー」 */
+            if (conv_active())
+                conv_accept();
             const uint16_t ch = 0x30FC;
             comp_insert(&ch, 1, 0);
+            dirty = 1;
+        }
+        if (rs == 4) {
+            /* ★↓ = 句読点。1 回「、」/ 2 回「。」/ 3 回 全角空白。
+               窓の中に次が来たら**前の字を差し替える**（GamepadEngine と同じ。
+               あちらの PUNCTUATION_DOUBLE_TAP_MS は 600ms）。 */
+            if (conv_active())
+                conv_accept();
+            const int within = punct_at && fields < punct_at;
+            punct_n = within ? punct_n + 1 : 1;
+            punct_at = fields + PUNCT_WINDOW;
+            uint16_t ch = 0x3001;      /* 、 */
+            int rep = 0;
+            if (punct_n == 2) {
+                ch = 0x3002;           /* 。 */
+                rep = 1;
+            } else if (punct_n >= 3) {
+                ch = 0x3000;           /* 全角空白 */
+                rep = 1;
+                punct_n = 0;
+                punct_at = 0;
+            }
+            comp_insert(&ch, 1, rep);
             dirty = 1;
         }
 
@@ -541,10 +592,23 @@ static void interactive(void)
             }
         }
 
-        if ((edge & BTN_START) && !clen)   /* ★段階 E でオプション画面に置き換える */
-            break;
+        /* ★Start は**長押し**（1 秒）で終わる。押した瞬間に終わると、打っている
+           途中の誤爆で全部消える（実機の指摘・2026-08-31）。
+           ★いずれオプション画面に置き換える（Zenmai と同じ形）。 */
+        if (p & BTN_START) {
+            if (++start_hold >= 60)
+                break;
+        } else {
+            start_hold = 0;
+        }
 
-        if ((edge & BTN_L3) && (clen || conv_active())) {   /* L3 = 確定して ELIZA へ */
+        if ((edge & BTN_L3) && conv_active()) {
+            /* ★1 回目の押し込みは**変換の確定**だけ（実機の指摘・2026-08-31）。
+               ELIZA へ渡すのはもう一度押したとき。 */
+            conv_accept();
+            gm.eagerSet = 0;
+            dirty = 1;
+        } else if ((edge & BTN_L3) && clen) {               /* L3 = 確定して ELIZA へ */
             /* 遡っている最中の確定は、まず下端へ跳んでひと呼吸置く */
             if (view_px < hist_total() - body_h) {
                 view_bottom();
@@ -552,16 +616,9 @@ static void interactive(void)
                 wait_fields(18);
             }
             static uint16_t typed[COMP_MAX * 2];
-            int typed_n;
-            if (conv_active()) {
-                /* ★確定と同時に学習する（hechima_learn）。境界を実際に伸縮した
-                   ときだけ境界学習に入るかは上流が判定するので、常に送ってよい。 */
-                typed_n = conv_commit(typed, (int)(sizeof typed / sizeof *typed));
-            } else {
-                typed_n = clen;
-                for (int i = 0; i < clen; i++)
-                    typed[i] = comp[i];
-            }
+            const int typed_n = clen;
+            for (int i = 0; i < clen; i++)
+                typed[i] = comp[i];
             clen = 0;
             caret = 0;
             gm.eagerSet = 0;
