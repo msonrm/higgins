@@ -12,7 +12,12 @@
 #define HG_CONV_H
 #include <stdint.h>
 
-enum { CONV_SEG_MAX = 24, CONV_CAND_MAX = 9, CONV_STR_MAX = 128 };
+/* ★候補は 20 件まで（実機の指摘・2026-08-31。9 件だと「少ない」）。
+   候補窓は 5 件で 1 ページなので 4 ページ ＝ 点列でも数えられる範囲に収まる
+   （hechima の pageDots は 8 ページを超えたら数字に倒す作法）。
+   ★表の実体は CONV_SEG_MAX × CONV_CAND_MAX × CONV_STR_MAX × 2 バイト。
+     20 件でも 120KB ほどなので、この機械では気にしなくてよい。 */
+enum { CONV_SEG_MAX = 24, CONV_CAND_MAX = 20, CONV_STR_MAX = 128 };
 
 /* エンジンを起こす。1 = 使える */
 int conv_init(const char *data_path, const char *profile_dir);
