@@ -26,7 +26,16 @@ void gp_sync_prev(GpMachine *s, const GpFrame *f)
 void gp_consume_rt(GpMachine *s) { s->rtUsed = 1; }
 void gp_break_rt_cycle(GpMachine *s) { s->rtCycleStep = 0; }
 unsigned short gp_row_char(int row) { return (row >= 0 && row < 10) ? GP_KANA[row][0] : 0x3042; }
-unsigned short gp_row_char_en(int row) { return (row >= 0 && row < 10) ? GP_ENG[row][0] : '1'; }
+int gp_row_chars_en(int row, unsigned short *out, int max)
+{
+    if (row < 0 || row >= 10)
+        row = 0;
+    int n = 0;
+    for (int v = 1; v < 5 && n < max; v++)     /* 面ボタン（左・上・右・下）の順 */
+        if (GP_ENG[row][v])
+            out[n++] = GP_ENG[row][v];
+    return n;
+}
 
 unsigned short gp_cell(int english, int row, int vowel)
 {
@@ -133,10 +142,11 @@ static int step_english(GpMachine *s, const GpFrame *f, GpAction out[4])
                     ch -= 0x20;
                 if (s->engShiftNext)
                     s->engShiftNext = 0;
-                if (s->engSmartCaps && !is_alpha(ch)) {
+                /* ★SmartCaps は英字以外で解ける。★**CapsLock は落とさない** ——
+                   明示して掛けた固定は、明示した操作（もう一度の長押し）でしか解けない
+                   のが筋（GIME はそうしている。labo の web 版は CapsLock まで落とす）。 */
+                if (s->engSmartCaps && !is_alpha(ch))
                     s->engSmartCaps = 0;
-                    s->engCapsLock = 0;
-                }
             }
             int rowChanged = f->row != s->prevRow;
             int vowelChanged = f->vowel != s->prevVowelIndex;

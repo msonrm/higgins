@@ -34,6 +34,9 @@
      依存させないため（Zenmai の story.bin と同じ判断）。 */
 extern const char _binary_script_txt_start[];
 extern const char _binary_script_txt_end[];
+/* ★英語の相手 = 1966 年 CACM の原典（vendor の付録を無加工で焼いたもの）。 */
+extern const char _binary_script_en_txt_start[];
+extern const char _binary_script_en_txt_end[];
 
 /* ---- 画面 ---- */
 
@@ -75,6 +78,13 @@ static int clen, caret;
    ★これが無いと、確定したあとに続けて打って変換すると**確定済みの字まで
      もう一度変換してしまう**（実機の指摘・2026-08-31）。 */
 static int fixed;
+/* いま話している相手。0 = 日本語 DOCTOR / 1 = 1966 年の原典 DOCTOR。
+ * ★**言語ではなく相手**（席）を指す —— 記憶も規則も別なので、切り替えは
+ *   「英語で書く」ではなく「別の相手に向き直る」ことになる。
+ * ★英語には変換が無いので、打った字は**その場で確定**する（comp_insert の末尾）。
+ *   これだけで L3 が 1 回で送信になり、R3 は「捨てるものが無い」になり、
+ *   左スティック↓ は行移動になる —— ★英語専用の分岐を主ループに撒かずに済む。 */
+static int english;
 
 static void comp_insert(const uint16_t *t, int tn, int replace)
 {
@@ -96,6 +106,8 @@ static void comp_insert(const uint16_t *t, int tn, int replace)
         comp[caret + i] = t[i];
     clen += tn;
     caret += tn;
+    if (english)
+        fixed = caret;                 /* ★英語は変換が無いので即確定（上の注記） */
 }
 
 static void comp_bs(void)
@@ -165,12 +177,30 @@ enum {
     BOX_X0    = MARGIN + 24,           /* ＞ のぶん右へ。★2 行目以降も揃える */
     /* 右端。★印の箱（左枠が W-MARGIN-27）に**3px の隙間を空けて**止める ——
        Zenmai の 1 行版は `W-MARGIN-24` まで描いていて箱と重なりうるが、
-       あちらは入力側でも幅を絞っていたので表に出なかった。 */
+       あちらは入力側でも幅を絞っていたので表に出なかった。
+       ★英語では箱が**2 枠**（シフトの印 ＋ 行）になるので、そのぶん狭い（box_x1）。 */
     BOX_X1    = W - MARGIN - 30,
+    /* 英語の箱の中身 = その行の面ボタンの字（最大 `@#-_` の 53px）。★行ごとに幅が
+       変わると箱が動いて読みにくいので**固定**にして中で中央寄せする。 */
+    EN_IND_W  = 62,                    /* 実測: 一番広い行 `@#-_` が 53px。左右に 4px 余る */
+    /* シフトの印。★**枠の外**に置く（実機の指摘・2026-09-01）—— 枠の中に空き枠を
+       用意しておくのは、印が無いときの見た目が落ち着かない。
+       ★横幅は**英語では常に確保する**（出たり消えたりで折返しが動かないように）。 */
+    EN_MARK_W = 26,
     BOX_LINES = 16,                    /* 折返しの上限（96 字なら 5 行で足りる） */
 };
 static uint16_t box[BOX_H][W];
 static int box_rows = 1;               /* いま見せている行数（1..BOX_ROWS） */
+
+/* 字を描ける右端。★英語は印の枠のぶん狭い。**切り替えは欄が空のときだけ**なので、
+   ここが変わっても折返しが目の前で動くことはない。 */
+static int box_x1(void)
+{
+    if (!english)
+        return BOX_X1;
+    /* 枠の左端（W-MARGIN-EN_IND_W-3）の手前に、印の幅と隙間を空ける */
+    return W - MARGIN - EN_IND_W - 3 - EN_MARK_W - 6;
+}
 
 /* ★注目文節の左上（**画面座標**）。候補窓をそこへ開くために draw_input が控える。
    **図を描く側と位置を決める側で同じ割り付けを使う**ため、別に計算し直さない。
@@ -183,9 +213,10 @@ static int box_layout(const uint16_t *s, int n, int *start)
     int nl = 0;
     start[nl++] = 0;
     int x = BOX_X0;
+    const int x1 = box_x1();
     for (int i = 0; i < n; i++) {
         const int w = glyph_w(s[i]);
-        if (x + w > BOX_X1) {
+        if (x + w > x1) {
             if (nl >= BOX_LINES)
                 break;
             start[nl++] = i;
@@ -236,7 +267,8 @@ static int caret_line_move(int d)
  *             ★確定済みには引かない —— もう変換の対象ではない。
  *             ★未確定は**キャレットの手前まで**（その先は確定済みが続きうる）
  */
-static void draw_input(const uint16_t *s, int n, int car, uint16_t ind,
+static void draw_input(const uint16_t *s, int n, int car,
+                       const uint16_t *ind, int ilen, uint16_t mark,
                        int ua, int ub, int fa, int fb)
 {
     int start[BOX_LINES];
@@ -284,7 +316,7 @@ static void draw_input(const uint16_t *s, int n, int car, uint16_t ind,
                 focus_x = x;
                 focus_y = boxy + r * BASE;
             }
-            if (x + glyph_w(s[i]) > BOX_X1)
+            if (x + glyph_w(s[i]) > box_x1())
                 break;                 /* ★draw24 は横の範囲を見ない */
             draw24(box, bufh, x, y, s[i], INK);
             if (ua >= 0 && i >= ua && i < ub) {   /* 未確定の下線 */
@@ -312,18 +344,26 @@ static void draw_input(const uint16_t *s, int n, int car, uint16_t ind,
 
     /* 行インジケータの箱。
        ★**右下の角**に置く（実機の指摘・2026-08-31）—— Zenmai は欄が 1 行しか
-         無かったので右端＝右下だったが、3 行になると 1 行目は「中途半端に上」。 */
-    int iw = ind ? glyph_w(ind) : 0;
-    if (iw < 24)
-        iw = 24;
-    const int kx = W - MARGIN - iw;
+         無かったので右端＝右下だったが、3 行になると 1 行目は「中途半端に上」。
+       ★英語では**その行の面ボタンの字を全部**入れる（実機の指摘・2026-09-01）——
+         1 字では「この行に何があるか」が見えず、インジケータとして働かない。
+       ★シフトの印は**枠の外の左**（同）。枠の中に空き枠を用意すると落ち着かない。 */
+    int iw = 0;
+    for (int i = 0; i < ilen; i++)
+        iw += glyph_w(ind[i]);
+    const int inner = english ? EN_IND_W : (iw < 24 ? 24 : iw);
+    const int kx = W - MARGIN - inner;
     const int iy = bufh - BASE;
-    for (int c = kx - 3; c <= kx + iw + 2; c++)
+    for (int c = kx - 3; c <= kx + inner + 2; c++)
         box[iy][c] = box[iy + BASE - 1][c] = DIM;
     for (int r = 0; r < BASE; r++)
-        box[iy + r][kx - 3] = box[iy + r][kx + iw + 2] = DIM;
-    if (ind)
-        draw24(box, bufh, kx, iy, ind, ACCENT);
+        box[iy + r][kx - 3] = box[iy + r][kx + inner + 2] = DIM;
+    for (int i = 0, ix = kx + (inner - iw) / 2; i < ilen; i++) {   /* 箱の中で中央寄せ */
+        draw24(box, bufh, ix, iy, ind[i], ACCENT);
+        ix += glyph_w(ind[i]);
+    }
+    if (mark)                          /* ★枠の外（左）。隙間 4px */
+        draw24(box, bufh, kx - 3 - 4 - glyph_w(mark), iy, mark, ACCENT);
 
     /* ★隙間ごと送る（BOX_GAP の注記）。欄が伸びても縮んでも、境目に古い画素が残らない。 */
     gp0_upload(0, boxy - BOX_GAP, W, bufh, box[0]);
@@ -700,11 +740,17 @@ static const char *profile_dir(void)
 /* 打ち終わった 1 文を ELIZA へ渡し、返事を積む。 */
 static void send(const uint16_t *typed, int n)
 {
-    static char wa[4096];
-    wakachi(typed, n, wa, (int)sizeof wa);
+    static char buf[4096];
+    /* ★日本語だけ分かち書きを通す。英語は ELIZA が空白で切れるのでそのまま。
+       ★出口（tsunagi）は共通でよい —— あれは**日本語に隣接する空白だけ**を消すので、
+         英語の応答は 1 文字も動かない（tsunagi.h の注記）。 */
+    if (english)
+        u16_to_u8(typed, n, buf, (int)sizeof buf);
+    else
+        wakachi(typed, n, buf, (int)sizeof buf);
     draw_echo(typed, n);                       /* 打った通りを反響（＞付き） */
     hist_blank();
-    say(hg_eliza_response(wa), INK);
+    say(hg_eliza_response(english ? HG_EN : HG_JA, buf), INK);
     scroll_new();
 }
 
@@ -721,7 +767,11 @@ static void send(const uint16_t *typed, int n)
  *
  *   左手 D-pad(+L1) = 子音行 / 右手 面ボタン(+R1) = 母音 …… 同時押しで 1 字
  *   L2 = 拗音シフト / R2 = ん（連打で を・んを）
- *   右スティック ← BS / ↑ 濁点・半濁点 / → 長音「ー」
+ *   右スティック ← BS / ↑ 濁点・半濁点 / → 長音「ー」 / ↓ 、。全角空白
+ *   Select = 相手を替える（日本語 DOCTOR ⇔ 1966 年の原典）。★欄が空のときだけ
+ *   ★英語のときは GIME の英語モードに揃える（docs は Sources/GIME/SPEC.md）:
+ *     L2 = Shift（2 度押しで SmartCaps / 長押しで CapsLock）/ R2 = 数字 0
+ *     右スティック ← BS / ↑ アポストロフィ / → スラッシュ / ↓ 空白→ピリオド→カンマ
  *   左スティック ←→ キャレット移動 / ↑↓ 履歴を遡る（★打っていないときだけ）
  *   L3 押し込み = 確定して ELIZA へ / R3 押し込み = 未確定を捨てる（確定済みは残る）
  *   Start = やめる（★段階 E でオプション画面に置き換える）
@@ -736,7 +786,8 @@ static void interactive(void)
     int ls_at[4] = { 0, 0, 0, 0 };     /* 次にリピートする時刻（fields） */
     int prev_conv = 0;                 /* 前の回に変換中だったか（候補窓を消すため） */
     int punct_n = 0, punct_at = 0;     /* 右スティック↓ の連打（句読点トグル） */
-    uint16_t prev_rowchar = 0;
+    int prev_row = -1;
+    uint16_t prev_mark = 0;
 
     gp_init(&gm);
     clen = 0;
@@ -760,7 +811,7 @@ static void interactive(void)
         GpFrame f = frame_of(p, fields * 17);
         const int row = f.row;
         GpAction a[4];
-        const int an = gp_step(&gm, 0 /* japanese */, &f, a);
+        const int an = gp_step(&gm, english, &f, a);
         for (int i = 0; i < an; i++) {
             /* ★変換中に打ち始めたら、その時点の選択で確定してから入れる
                （実機の指摘・2026-08-31）。IME の作法。 */
@@ -783,13 +834,19 @@ static void interactive(void)
         const int rs = pad_rstick_flick(axes);
         if (rs)
             gp_break_rt_cycle(&gm);
-        if (rs == 2) {                 /* ↑ 濁点・半濁点をトグル */
-            uint16_t o_[2];
-            int rep;
-            const int l = gp_resolve_dakuten(comp, caret, o_, &rep);
-            if (l) {
-                comp_insert(o_, l, rep);
+        if (rs == 2) {                 /* ↑ 濁点・半濁点をトグル / 英語はアポストロフィ */
+            if (english) {
+                const uint16_t ch = 0x0027;    /* ' */
+                comp_insert(&ch, 1, 0);
                 dirty = 1;
+            } else {
+                uint16_t o_[2];
+                int rep;
+                const int l = gp_resolve_dakuten(comp, caret, o_, &rep);
+                if (l) {
+                    comp_insert(o_, l, rep);
+                    dirty = 1;
+                }
             }
         }
         if (rs == 1) {                 /* ← BS */
@@ -804,11 +861,13 @@ static void interactive(void)
                 dirty = 1;
             }
         }
-        if (rs == 3) {                 /* → 長音「ー」 */
+        if (rs == 3) {                 /* → 長音「ー」 / 英語はスラッシュ */
             if (conv_active())
                 conv_accept();
-            const uint16_t ch = 0x30FC;
+            const uint16_t ch = english ? 0x002F : 0x30FC;
             comp_insert(&ch, 1, 0);
+            if (english)
+                gm.engSmartCaps = 0;   /* ★GIME もここで解く（`/` は語の切れ目） */
             dirty = 1;
         }
         if (rs == 4) {
@@ -820,17 +879,25 @@ static void interactive(void)
             const int within = punct_at && fields < punct_at;
             punct_n = within ? punct_n + 1 : 1;
             punct_at = fields + PUNCT_WINDOW;
-            uint16_t ch = 0x3001;      /* 、 */
+            /* ★英語は **空白 → . → ,**（GIME の英語モードと同じ順）。日本語は 、→。→ 全角空白。
+               ★英語で最初に来るのが空白なのは、語の切れ目が一番よく要るから ——
+                 ELIZA は空白で語を切るので、**空白が打てないと 1 語しか送れない**。 */
+            uint16_t ch = english ? 0x0020 : 0x3001;
             int rep = 0;
             if (punct_n == 2) {
-                ch = 0x3002;           /* 。 */
+                ch = english ? 0x002E : 0x3002;    /* . / 。 */
                 rep = 1;
             } else if (punct_n >= 3) {
-                ch = 0x3000;           /* 全角空白 */
+                ch = english ? 0x002C : 0x3000;    /* , / 全角空白 */
                 rep = 1;
                 punct_n = 0;
                 punct_at = 0;
             }
+            /* ★空白や記号が来たら SmartCaps を解く（step_english が表の字に対して
+               やっているのと同じこと。こちらは表を通らない字なので手で解く）。
+               ★**CapsLock は落とさない** —— 明示して掛けた固定は明示した操作で解く。 */
+            if (english)
+                gm.engSmartCaps = 0;
             comp_insert(&ch, 1, rep);
             dirty = 1;
         }
@@ -847,6 +914,29 @@ static void interactive(void)
             } else if (caret > fixed) {
                 comp_drop_pending();
                 gm.eagerSet = 0;
+                dirty = 1;
+            }
+        }
+
+        if (edge & BTN_SELECT) {
+            /* ★Select = 相手を替える。**欄が空のときだけ**効く ——
+               切り替えは「相手を替える」ことなので、送っていない文が残っていると
+               それが誰宛てなのか決まらない。★1 通に 2 言語が混ざる道がそもそも
+               無くなるので、ELIZA 側に言語の判定を持ち込まずに済む。
+               ★替わったことは**新しい相手の挨拶**で分かる（画面に出る唯一の印）。 */
+            if (!clen) {
+                english = !english;
+                /* GIME と同じくシフト状態は持ち越さない */
+                gm.engShiftNext = 0;
+                gm.engSmartCaps = 0;
+                gm.engCapsLock = 0;
+                gm.eagerSet = 0;
+                punct_n = 0;
+                punct_at = 0;
+                hist_blank();
+                say(hg_eliza_greeting(english ? HG_EN : HG_JA), INK);
+                scroll_new();
+                prev_row = -1;         /* ★行が同じでも箱の中身が変わる */
                 dirty = 1;
             }
         }
@@ -979,8 +1069,30 @@ static void interactive(void)
             }
         }
 
-        const uint16_t rowchar = gp_row_char(row);
-        if (dirty || rowchar != prev_rowchar) {
+        /* 行インジケータ。★英語は**その行の面ボタンの字を全部**（`abc` / `pqrs`）。
+           ★シフトが効いていれば**大文字で見せる** —— 打つ前に分かってほしい
+             （実機の指摘・2026-09-01）。
+           ★印は**色ではなく形**で分ける（小さい画面で色差は読めない。`⇪` は
+             同梱フォントに無く、出すと黒い四角になるので使えない）:
+               ⇧ 次の 1 字だけ / △ 空白・記号まで（SmartCaps）/ ▲ 解除するまで（CapsLock） */
+        uint16_t ind[4];
+        int ilen;
+        uint16_t mark = 0;
+        if (english) {
+            ilen = gp_row_chars_en(row, ind, 4);
+            if (gm.engCapsLock)       mark = 0x25B2;   /* ▲ */
+            else if (gm.engSmartCaps) mark = 0x25B3;   /* △ */
+            else if (gm.engShiftNext) mark = 0x21E7;   /* ⇧ */
+            if (mark)
+                for (int i = 0; i < ilen; i++)
+                    if (ind[i] >= 'a' && ind[i] <= 'z')
+                        ind[i] -= 0x20;
+        } else {
+            ind[0] = gp_row_char(row);
+            ilen = 1;
+        }
+        /* ★中身は (row, english, mark) だけで決まるので、行と印を見れば足りる。 */
+        if (dirty || row != prev_row || mark != prev_mark) {
             if (conv_active()) {
                 /* ★表示は「確定済み ＋ 変換中の文節 ＋ **キャレットより後ろの
                    確定済み**」。3 つ目を忘れると、文字列の途中で変換したときに
@@ -1004,7 +1116,7 @@ static void interactive(void)
                    文節を移ると**前の窓が残る**（実測）。位置も大きさも変わるので、
                    前の矩形を覚えて消すより、下を描き直す方が確実で安い。 */
                 render_window();
-                draw_input(t, tn, -1, rowchar, ua, ub, fa, fb);
+                draw_input(t, tn, -1, ind, ilen, mark, ua, ub, fa, fb);
                 draw_cands();          /* ★入力欄を描いたあと（focus_x を使う） */
             } else {
                 /* ★変換をやめた回は本文を描き直す —— 候補窓が本文の上に
@@ -1014,10 +1126,11 @@ static void interactive(void)
                 /* ★**未確定のかな（comp[fixed..clen)）にも下線を引く。**
                    引かないと「どこまでが確定済みか」が、変換して初めて分かる
                    （実機の指摘・2026-08-31）。注目文節はまだ無いので fa/fb は -1。 */
-                draw_input(comp, clen, caret, rowchar, fixed, caret, -1, -1);
+                draw_input(comp, clen, caret, ind, ilen, mark, fixed, caret, -1, -1);
             }
             prev_conv = conv_active();
-            prev_rowchar = rowchar;
+            prev_row = row;
+            prev_mark = mark;
             dirty = 0;
         }
     }
@@ -1038,18 +1151,27 @@ int main(void)
        辞書 19MB を積めない機種でも起動はする、という形にしておく。 */
     conv_init(data_path(), profile_dir());
 
-    const int len = (int)(_binary_script_txt_end - _binary_script_txt_start);
     /* ★0 = 組み込みのエラーメッセージを使わない —— あれは**英語**なので、
        日本語スクリプトのまま出ると相手が急に英語で返してくる（実測: 「パパ」「さびしい」で
        `HMMM`）。スクリプト側の `NONE`（「よく分からないのですが」ほか 4 つ）に落とす。 */
-    if (!hg_eliza_init(_binary_script_txt_start, len, 0))
+    const int len = (int)(_binary_script_txt_end - _binary_script_txt_start);
+    if (!hg_eliza_init(HG_JA, _binary_script_txt_start, len, 0))
         say("スクリプトが読めない。", INK);
     else
-        say(hg_eliza_greeting(), INK);
+        say(hg_eliza_greeting(HG_JA), INK);
+    /* ★英語の席は**組み込みメッセージを既定（ON）のまま**にする —— あれは英語の
+       文字列なので、英語の相手には嘘にならない。upstream いわく「Weizenbaum の
+       ELIZA は組み込みメッセージを使っていた」ので、原典の席では触らないのが筋。 */
+    const int len_en = (int)(_binary_script_en_txt_end - _binary_script_en_txt_start);
+    /* ★戻り値を捨てない —— 失敗すると応答が空文字になり、**無言で「返事をしない
+       相手」に見える**（読めていないことが画面のどこにも出ない）。 */
+    if (!hg_eliza_init(HG_EN, _binary_script_en_txt_start, len_en, 1))
+        say("英語のスクリプトが読めない。", INK);
 
     view_bottom();
     render_window();
-    draw_input(0, 0, 0, 0, -1, -1, -1, -1);
+    const uint16_t ind0 = 0x3042;      /* 「あ」 */
+    draw_input(0, 0, 0, &ind0, 1, 0, -1, -1, -1, -1);
     gpu_display_on();
 
     pad_try_analog();

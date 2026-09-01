@@ -1,0 +1,19 @@
+# Select = 相手を替える（日本語 DOCTOR ⇔ 1966 年 CACM の原典）。
+# ★英語の打ち方は GIME の英語モード: 行 = D-pad(+L1) / 列 = 面ボタン(+R1) / 空白 = 右スティック↓。
+#   ZENMAI_STOP=220  → 英語の相手が挨拶した（HOW DO YOU DO. …）。箱の中は数字
+#   ZENMAI_STOP=730  → `i am sad` と打った。★下線が無い（英語は即確定）
+#   ZENMAI_STOP=820  → Select は効いていない（字が消えていないこと）
+#   ZENMAI_STOP=1000 → 原典が返した（I AM SORRY TO HEAR YOU ARE SAD）
+#   ZENMAI_STOP=1120 → 日本語の相手が挨拶した。箱の中は「あ」に戻る
+100-130:SEL   # ★相手を替える（欄が空なので効く）
+220-250:RIGHT+CIR   # i
+280-310:RSD   # 空白
+340-370:LEFT+SQ   # a
+400-430:L1+SQ   # m
+460-490:RSD   # 空白
+520-550:L1+LEFT+X   # s
+580-610:LEFT+SQ   # a
+640-670:UP+SQ   # d
+730-760:SEL   # ★欄が空でないので**効かない**
+820-850:L3   # ★1 回で送る（確定の段が無い）
+1000-1030:SEL   # 日本語へ戻る

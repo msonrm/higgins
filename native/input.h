@@ -7,7 +7,14 @@
 #ifndef GP_INPUT_H
 #define GP_INPUT_H
 
-enum { GP_CHORD_WINDOW_MS = 300, GP_ENG_LONG_PRESS_MS = 500, GP_ENG_DOUBLE_TAP_MS = 300 };
+/* ★GP_ENG_DOUBLE_TAP_MS は **GIME に合わせて 400**（labo の web 版は 300）。
+   二度押しの窓が狭いと SmartCaps が出しにくく、しかも**長押しに失敗した短押しが
+   2 つ続くと SmartCaps になる**ので、狭いほど「効いたり効かなかったり」に見える。
+   ★上流が 2 つあって値が違う（GIME 400 / web 300）。実機で打つ人が GIME を
+     基準にしているので、こちらは GIME に揃える。
+   ★GP_ENG_LONG_PRESS_MS は **300**（GIME / labo web はどちらも 500）。
+     実機で「▲ が出るまで待たされる」と言われて縮めた。 */
+enum { GP_CHORD_WINDOW_MS = 300, GP_ENG_LONG_PRESS_MS = 300, GP_ENG_DOUBLE_TAP_MS = 400 };
 
 /* 1 フレーム分の派生入力。vowel: -1 = 未選択 */
 typedef struct {
@@ -47,9 +54,14 @@ int gp_resolve_dakuten(const unsigned short *tail, int n, unsigned short out[2],
 void gp_consume_rt(GpMachine *s);
 /* RT 連打サイクルを断つ(resolver.action 相当 — スティック等の出力前に呼ぶ) */
 void gp_break_rt_cycle(GpMachine *s);
-/* 行インジケータ用: その行のあ段の字 / 英語は T9 の数字 */
+/* 行インジケータ用: その行のあ段の字。 */
 unsigned short gp_row_char(int row);
-unsigned short gp_row_char_en(int row);
+/* 英語の行インジケータ: その行の**面ボタンの字を全部**（3〜4 字。`abc` / `pqrs`）。
+   ★1 字では**インジケータとして機能しない**（実機の指摘・2026-09-01）—— 押す前に
+     「この行に何があるか」が見えないと支えにならない。
+   ★列 0（R1 = 数字）は入れない —— あれは行によらず 1 つのキーなので覚えられる。
+   戻り値 = 書いた字数。 */
+int gp_row_chars_en(int row, unsigned short *out, int max);
 /* 入力表の 1 マス(row 0..9 / vowel 0..4)。0 = そのマスは空。
    ★図を描く側が表を持たないための窓。**写すと、図に出ている字と実際に入る字が
      ずれても誰も気づけない**(web 版で踏んだ事故) */

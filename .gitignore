@@ -27,6 +27,7 @@ dist/
 native/obj/
 native/vocab.h
 native/script.txt
+native/script_en.txt
 native/higgins
 native/test_reply
 *.raw

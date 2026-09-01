@@ -31,11 +31,11 @@ static void print_reply(const char *utf8)
 int main(void)
 {
     const int len = (int)(_binary_script_txt_end - _binary_script_txt_start);
-    if (!hg_eliza_init(_binary_script_txt_start, len, 0)) {   /* 0 = 本体と同じ（main.c の注記） */
+    if (!hg_eliza_init(HG_JA, _binary_script_txt_start, len, 0)) {   /* 0 = 本体と同じ（main.c の注記） */
         fprintf(stderr, "スクリプトが読めない\n");
         return 1;
     }
-    print_reply(hg_eliza_greeting());
+    print_reply(hg_eliza_greeting(HG_JA));
 
     char line[4096];
     while (fgets(line, sizeof line, stdin)) {
@@ -46,7 +46,7 @@ int main(void)
         char wa[8192];
         const int n = u8_to_u16(line, -1, in16, (int)(sizeof in16 / sizeof *in16));
         wakachi(in16, n, wa, (int)sizeof wa);
-        print_reply(hg_eliza_response(wa));
+        print_reply(hg_eliza_response(HG_JA, wa));
     }
     return 0;
 }
