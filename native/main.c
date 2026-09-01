@@ -110,6 +110,22 @@ static void comp_bs(void)
         fixed = caret;
 }
 
+/* 未確定（`comp[fixed..caret)`）だけを捨てる。
+ * ★**確定済みには触らない。** キャンセルは「まだ決まっていないものを取り消す」操作で、
+ *   決まったものを消すのは BS の仕事（実機の指摘・2026-09-01）。
+ *   hechima のキャンセル（Escape）も、変換中なら**よみへ戻し**、よみだけなら
+ *   **そのよみを捨て**、未確定が無ければ**何もしない** —— 本文は最後まで残る。 */
+static void comp_drop_pending(void)
+{
+    const int del = caret - fixed;
+    if (del <= 0)
+        return;
+    for (int i = fixed; i + del < clen; i++)
+        comp[i] = comp[i + del];
+    clen -= del;
+    caret = fixed;
+}
+
 /* キャレットを動かす。★動かしたら**未確定はそこで終わる**（`fixed = caret`）——
  * ★置いていくと「右へ動かしただけ」で未確定が生まれ、確定済みの字が変換対象に
  *   なってしまう（実機の指摘・2026-09-01）。
@@ -138,7 +154,14 @@ enum {
        実機の指摘（2026-09-01）—— 1 行しか打っていないのに 3 行ぶん空いているのは
        落ち着かない。★本文窓はそのぶん伸び縮みする。 */
     BOX_ROWS  = 3,                     /* 上限 */
-    BOX_H     = BOX_ROWS * BASE,       /* 器の最大（実際に描くのは box_rows 行） */
+    /* 本文窓との隙間。★**欄の側が持つ**（本文窓ではなく）—— 欄の高さが動くと
+       隙間も一緒に動くので、本文窓の側から塗ると**どちらも塗らない 8px** が残る。
+       実際、送って欄が 2 行から 1 行へ縮んだとき、古い欄の字の下 8px が
+       帯になって残っていた（実機の指摘・2026-09-01）。
+       ★直し方は「毎回引き直す」—— 欄と隙間を**ひとまとめに送る**。
+         変わり目だけ塗る形にすると、次に隙間を汚す道ができたときにまた残る。 */
+    BOX_GAP   = 8,
+    BOX_H     = BOX_GAP + BOX_ROWS * BASE,  /* 器の最大（隙間 ＋ box_rows 行） */
     BOX_X0    = MARGIN + 24,           /* ＞ のぶん右へ。★2 行目以降も揃える */
     /* 右端。★印の箱（左枠が W-MARGIN-27）に**3px の隙間を空けて**止める ——
        Zenmai の 1 行版は `W-MARGIN-24` まで描いていて箱と重なりうるが、
@@ -224,9 +247,10 @@ static void draw_input(const uint16_t *s, int n, int car, uint16_t ind,
     const int rows = (nl < BOX_ROWS) ? (nl > 0 ? nl : 1) : BOX_ROWS;
     const int boxh = rows * BASE;
     const int boxy = H - 24 - boxh;    /* 下セーフ 24px は Zenmai と同じ */
+    const int bufh = BOX_GAP + boxh;   /* 送る高さ（隙間ぶん上へ出す） */
     if (rows != box_rows) {
         box_rows = rows;
-        body_h = boxy - 8 - body_top;
+        body_h = boxy - BOX_GAP - body_top;
         view_bottom();
         render_window();
     }
@@ -243,15 +267,15 @@ static void draw_input(const uint16_t *s, int n, int car, uint16_t ind,
     if (top < 0)
         top = 0;
 
-    fill_rows(box, 0, boxh, BG);
+    fill_rows(box, 0, bufh, BG);
     /* ★「＞」は窓の先頭行に置く（行が流れても目印が動かない）。
        ★上に隠れている行があるときは**薄く**する —— 遡れることが分かる最小の印。 */
-    draw24(box, boxh, MARGIN, 0, 0xFF1E, top ? DIM : ACCENT);
+    draw24(box, bufh, MARGIN, BOX_GAP, 0xFF1E, top ? DIM : ACCENT);
 
     for (int r = 0; r < rows && top + r < nl; r++) {
         const int i0 = start[top + r];
         const int i1 = (top + r + 1 < nl) ? start[top + r + 1] : n;
-        const int y = r * BASE;
+        const int y = BOX_GAP + r * BASE;
         int x = BOX_X0, cx = BOX_X0;
         for (int i = i0; i < i1; i++) {
             if (i == car)
@@ -262,7 +286,7 @@ static void draw_input(const uint16_t *s, int n, int car, uint16_t ind,
             }
             if (x + glyph_w(s[i]) > BOX_X1)
                 break;                 /* ★draw24 は横の範囲を見ない */
-            draw24(box, boxh, x, y, s[i], INK);
+            draw24(box, bufh, x, y, s[i], INK);
             if (ua >= 0 && i >= ua && i < ub) {   /* 未確定の下線 */
                 const int on = (i >= fa && i < fb);
                 const uint16_t col = on ? ACCENT : DIM;
@@ -293,15 +317,16 @@ static void draw_input(const uint16_t *s, int n, int car, uint16_t ind,
     if (iw < 24)
         iw = 24;
     const int kx = W - MARGIN - iw;
-    const int iy = boxh - BASE;
+    const int iy = bufh - BASE;
     for (int c = kx - 3; c <= kx + iw + 2; c++)
         box[iy][c] = box[iy + BASE - 1][c] = DIM;
     for (int r = 0; r < BASE; r++)
         box[iy + r][kx - 3] = box[iy + r][kx + iw + 2] = DIM;
     if (ind)
-        draw24(box, boxh, kx, iy, ind, ACCENT);
+        draw24(box, bufh, kx, iy, ind, ACCENT);
 
-    gp0_upload(0, boxy, W, boxh, box[0]);
+    /* ★隙間ごと送る（BOX_GAP の注記）。欄が伸びても縮んでも、境目に古い画素が残らない。 */
+    gp0_upload(0, boxy - BOX_GAP, W, bufh, box[0]);
 }
 
 /* ---- 候補窓 ----
@@ -698,7 +723,7 @@ static void send(const uint16_t *typed, int n)
  *   L2 = 拗音シフト / R2 = ん（連打で を・んを）
  *   右スティック ← BS / ↑ 濁点・半濁点 / → 長音「ー」
  *   左スティック ←→ キャレット移動 / ↑↓ 履歴を遡る（★打っていないときだけ）
- *   L3 押し込み = 確定して ELIZA へ / R3 押し込み = 打った行を捨てる
+ *   L3 押し込み = 確定して ELIZA へ / R3 押し込み = 未確定を捨てる（確定済みは残る）
  *   Start = やめる（★段階 E でオプション画面に置き換える）
  *
  *   ★段階 D（mozc）で足りる余地を空けてある: 打っている最中の**左スティック縦**
@@ -812,15 +837,15 @@ static void interactive(void)
 
         if (edge & BTN_R3) {
             /* ★2 段にする（IME の作法）: 変換中はまず変換だけ取り消し、
-               もう一度でその行を捨てる。GamepadEngine の cancel は 1 段だが、
-               あちらはホスト（ブラウザ）が本文を持っているので事情が違う。 */
+               もう一度で**未確定のかな**を捨てる。
+               ★**確定済みは消さない**（実機の指摘・2026-09-01）—— 前は行ごと
+                 捨てていたが、キャンセルは未確定に対する操作で、確定した字まで
+                 消えるのは hechima（Escape）とも違う。消したいときは BS。 */
             if (conv_active()) {
                 conv_cancel();
                 dirty = 1;
-            } else if (clen) {
-                clen = 0;
-                caret = 0;
-                fixed = 0;
+            } else if (caret > fixed) {
+                comp_drop_pending();
                 gm.eagerSet = 0;
                 dirty = 1;
             }
@@ -1002,10 +1027,11 @@ int main(void)
 {
     gpu_init();
     render_init();
-    /* ★入力欄を 3 行に広げたぶん、本文窓を縮める（render_init の既定を上書き）。
-       ★欄の高さは**固定**なので、打っている途中に本文が動くことはない。 */
+    /* ★入力欄のぶん本文窓を縮める（render_init の既定を上書き）。
+       ★欄の高さは打った量で動くので、ここは**1 行ぶんの初期値**でしかない ——
+         以後は draw_input が行数の変わり目で引き直す。 */
     body_top = TOP;
-    body_h = (H - 24 - BASE) - 8 - body_top;   /* 欄 1 行ぶんから始める */
+    body_h = (H - 24 - BASE) - BOX_GAP - body_top;   /* 欄 1 行ぶんから始める */
     paint_screen(BG);
 
     /* ★変換エンジン。無くても Higgins は動く（かなのまま ELIZA へ渡る）——
