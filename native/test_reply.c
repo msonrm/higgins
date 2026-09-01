@@ -31,7 +31,7 @@ static void print_reply(const char *utf8)
 int main(void)
 {
     const int len = (int)(_binary_script_txt_end - _binary_script_txt_start);
-    if (!hg_eliza_init(_binary_script_txt_start, len)) {
+    if (!hg_eliza_init(_binary_script_txt_start, len, 0)) {   /* 0 = 本体と同じ（main.c の注記） */
         fprintf(stderr, "スクリプトが読めない\n");
         return 1;
     }

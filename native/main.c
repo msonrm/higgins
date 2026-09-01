@@ -1039,7 +1039,10 @@ int main(void)
     conv_init(data_path(), profile_dir());
 
     const int len = (int)(_binary_script_txt_end - _binary_script_txt_start);
-    if (!hg_eliza_init(_binary_script_txt_start, len))
+    /* ★0 = 組み込みのエラーメッセージを使わない —— あれは**英語**なので、
+       日本語スクリプトのまま出ると相手が急に英語で返してくる（実測: 「パパ」「さびしい」で
+       `HMMM`）。スクリプト側の `NONE`（「よく分からないのですが」ほか 4 つ）に落とす。 */
+    if (!hg_eliza_init(_binary_script_txt_start, len, 0))
         say("スクリプトが読めない。", INK);
     else
         say(hg_eliza_greeting(), INK);

@@ -23,13 +23,14 @@ std::unique_ptr<elizalogic::eliza> g_eliza;
 std::string g_out;                     /* 戻り値の寿命はここが持つ */
 }
 
-extern "C" int hg_eliza_init(const char *script_utf8, int len)
+extern "C" int hg_eliza_init(const char *script_utf8, int len, int use_nomatch_msgs)
 {
     try {
         std::string text(script_utf8, static_cast<size_t>(len));
         std::istringstream in(text);
         elizascript::read(in, g_script);
         g_eliza = std::make_unique<elizalogic::eliza>(g_script.rules, g_script.mem_rule);
+        g_eliza->set_use_nomatch_msgs(use_nomatch_msgs != 0);
         return 1;
     } catch (...) {
         return 0;

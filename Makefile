@@ -7,7 +7,7 @@ CXXFLAGS ?= -std=c++20 -O1 -w
 BUILD     := build
 ELIZA_SRC := vendor/eliza/src/eliza.cpp
 
-.PHONY: all test test-ja test-ja-doctor test-web test-api test-native clean
+.PHONY: all test test-ja test-ja-doctor test-ja-alias test-web test-api test-native clean
 
 all: $(BUILD)/eliza
 
@@ -20,7 +20,7 @@ $(BUILD)/eliza: $(ELIZA_SRC)
 #   そこで 2 つ焼いて、両方の結果が揃ってはじめて緑とする:
 #     eliza-count  … 本番と同じロジック + 件数表示   → 「1 件以上あって 0 失敗」
 #     eliza-canary … それにわざと落ちるテストを 1 個 → 「1 失敗」（検査が生きている証拠）
-test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-web test-api test-native
+test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-web test-api test-native
 	@printf '\n' | $(BUILD)/eliza-count | grep -qE '[1-9][0-9]* assertions' \
 	  || { echo 'FAIL: テストが 1 件も走っていない'; exit 1; }
 	@printf '\n' | $(BUILD)/eliza-count | grep -q '0 failures' \
@@ -61,6 +61,29 @@ test-ja-doctor: $(BUILD)/eliza
 	  | diff -u experiments/ja_doctor.out - > /dev/null \
 	  || { echo 'FAIL: 日本語 DOCTOR のゴールデンが一致しない'; exit 1; }
 	@echo 'OK: 日本語 DOCTOR ゴールデン一致'
+
+# ★別名のゴールデン（ママ / パパ / さびしい / 楽しい …）。**ja_doctor とは別に持つ** ——
+#   あちらは会話の流れを見るもので、代表形（母 / 悲しい）しか通らないため、
+#   「別名から飛んだ先で分解規則が合わない」という穴を 1 つも踏まない（実際に踏んでいなかった）。
+#
+# ★★**CLI と native を同じ期待値に突き合わせる**のが肝。両者は組み込みエラー
+#   メッセージの設定が違う（CLI = ON / native = OFF）ので、`HMMM` などが 1 つでも
+#   出れば必ず差分になる。★つまりこの 1 本が「英語が画面に出ていないこと」の検査を兼ねる。
+test-ja-alias: $(BUILD)/eliza
+	@python3 tools/wakachi.py doctor/ja.txt < experiments/ja_alias.in \
+	  | $(BUILD)/eliza --nobanner doctor/ja.txt \
+	  | python3 tools/tsunagi.py \
+	  | diff -u experiments/ja_alias.out - > /dev/null \
+	  || { echo 'FAIL: 別名ゴールデンが一致しない'; exit 1; }
+	@if pkg-config --exists sdl2 freetype2 2>/dev/null; then \
+	    sh native/build.sh > /dev/null; \
+	    ./native/test_reply < experiments/ja_alias.in | grep -v '^$$' > $(BUILD)/alias-native.out; \
+	    grep -v '^$$' experiments/ja_alias.out | diff -u - $(BUILD)/alias-native.out > /dev/null \
+	      || { echo 'FAIL: native が CLI と違う = 組み込みの英語メッセージが出ている疑い'; \
+	           grep -v '^$$' experiments/ja_alias.out | diff -u - $(BUILD)/alias-native.out | head -20; \
+	           exit 1; }; \
+	fi
+	@echo 'OK: 別名ゴールデン一致（組み込みの英語メッセージも出ていない）'
 
 # ★web/ の JS 3 本を Node で動かし、C++ 版と同じ応答が出るかを見る。
 #   ブラウザを開かずに Web 版の回帰を守るため。★独立した 2 実装が一致することは
