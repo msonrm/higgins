@@ -11,10 +11,15 @@
    二度押しの窓が狭いと SmartCaps が出しにくく、しかも**長押しに失敗した短押しが
    2 つ続くと SmartCaps になる**ので、狭いほど「効いたり効かなかったり」に見える。
    ★上流が 2 つあって値が違う（GIME 400 / web 300）。実機で打つ人が GIME を
-     基準にしているので、こちらは GIME に揃える。
-   ★GP_ENG_LONG_PRESS_MS は **300**（GIME / labo web はどちらも 500）。
-     実機で「▲ が出るまで待たされる」と言われて縮めた。 */
-enum { GP_CHORD_WINDOW_MS = 300, GP_ENG_LONG_PRESS_MS = 300, GP_ENG_DOUBLE_TAP_MS = 400 };
+     基準にしているので、こちらは GIME に揃える。 */
+/* ★GP_ENG_LONG_PRESS_MS は **400**（GIME / labo web は 500）。
+   実機で「▲ が出るまで待たされる」と言われて 300 まで縮めたら、今度は
+   **単押しが ▲ になった**（2026-09-01）—— 人の「叩く」が 300ms を越えていた。
+   ★★これが唯一残る時間判定なので、ここだけは余裕を持たせる。
+     ★台本の「短押し」も 400ms を割るように書くこと（20 field = 340ms は短押し、
+     30 field = 510ms は長押し）。**閾値を動かすと台本の「短い」の意味も動く。**
+   ★二度押しの窓（GP_ENG_DOUBLE_TAP_MS）は**廃止した** —— 下の GpMachine の注記。 */
+enum { GP_CHORD_WINDOW_MS = 300, GP_ENG_LONG_PRESS_MS = 400 };
 
 /* 1 フレーム分の派生入力。vowel: -1 = 未選択 */
 typedef struct {
@@ -29,7 +34,9 @@ typedef struct {
     int prevVowelPressed, prevRow, prevVowelIndex, prevConsonantCount, prevLT, prevRT;
     int eagerSet, eagerCharLen, eagerTime;
     int rtUsed, rtDuringLT, rtCycleStep;
-    int engShiftNext, engCapsLock, engSmartCaps, engLTHolding, engLTPressTime, engLastLTRelease;
+    /* 英語のシフト。★**3 つは同時に立たない**（下の巡回で必ず 1 つだけになる）——
+       立てるようにしていたら、△ が字で解けた瞬間に ⇧ が現れる、という形で実機に出た。 */
+    int engShiftNext, engCapsLock, engSmartCaps, engLTHolding, engLTPressTime;
 } GpMachine;
 
 enum { GPA_KANA, GPA_YOUON };

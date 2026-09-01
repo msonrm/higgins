@@ -171,28 +171,42 @@ static int step_english(GpMachine *s, const GpFrame *f, GpAction out[4])
     if (s->prevVowelPressed && !f->vowelNow)
         s->eagerSet = 0;
 
-    /* LT: 短押し=Shift、長押し=CapsLock、短押し×2=SmartCaps */
+    /* LT: **単押しで巡回**（なし → ⇧ 1 字だけ → △ 続く → なし）/ 長押しで ▲ をトグル。
+     *
+     * ★**二度押しの時間窓はやめた**（実機の指摘・2026-09-01）。理由が 3 つ揃った:
+     *   - ゲームパッドには**見えるシフトキーが無い**ので、時間で二度押しを狙えない
+     *   - ★**△ と ⇧ に抜け道が無かった** —— ▲ だけが長押しで解除でき、
+     *     △ は空白か記号を打つまで、⇧ は次の字を打つまで消せなかった
+     *   - ★**同時に立ちうる**ので、△ が字で解けた瞬間に ⇧ が現れることがあった
+     * ★巡回なら**どの状態からも単押しだけで抜けられ**、しかも 1 つしか立たない。
+     *   ソフトウェアキーボードのシフトキー（叩くたび 一時 → 固定 → 解除）と同じ形。
+     * ★★これは GIME / labo web の**どちらとも違う**（あちらは単押し / 二度押し /
+     *   長押しの 3 通り）。**画面のキーではなく肩ボタンだから**、という理由で分けた。
+     */
     if (f->ltNow && !s->prevLT) {
         s->engLTPressTime = f->now;
         s->engLTHolding = 1;
     }
     if (f->ltNow && s->engLTHolding && (f->now - s->engLTPressTime) >= GP_ENG_LONG_PRESS_MS) {
-        s->engCapsLock = !s->engCapsLock;
+        s->engCapsLock = !s->engCapsLock;   /* 押している最中に発火する（印がすぐ出る） */
         s->engSmartCaps = 0;
         s->engShiftNext = 0;
-        s->engLTHolding = 0;
+        s->engLTHolding = 0;                /* 1 回だけ */
     }
     if (!f->ltNow && s->prevLT) {
-        if (s->engLTHolding) {
-            if ((f->now - s->engLastLTRelease) < GP_ENG_DOUBLE_TAP_MS) {
-                s->engSmartCaps = 1;
+        if (s->engLTHolding) {              /* 閾値未到達 = 単押し */
+            if (s->engCapsLock) {           /* ▲ → なし（長押しでなくても降りられる） */
+                s->engCapsLock = 0;
+            } else if (s->engSmartCaps) {   /* △ → なし */
+                s->engSmartCaps = 0;
+            } else if (s->engShiftNext) {   /* ⇧ → △ */
                 s->engShiftNext = 0;
-            } else {
+                s->engSmartCaps = 1;
+            } else {                        /* なし → ⇧ */
                 s->engShiftNext = 1;
             }
         }
         s->engLTHolding = 0;
-        s->engLastLTRelease = f->now;
     }
 
     /* RT: "0" */
