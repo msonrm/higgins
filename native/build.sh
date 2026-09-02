@@ -32,6 +32,9 @@ $PY ../tools/gen_vocab.py "$SCRIPT_KO" vocab_ko.h VOCAB_KO
 $PY ../tools/gen_josa.py josa_tables.h tsunagi_ko_tables.h
 # ★ハングル合成の表は labo の TS から焼く（gen_tables.py と同じ判断 = 同じ正典から自分で）。
 $PY gen_korean.py
+# ★デーヴァナーガリーの表は labo の **Swift** から焼く —— web に実装が無いため。
+#   ★韓国語では移植元を web にしたせいで `revertCoda` の配慮が丸ごと落ちた（実機で発覚）。
+$PY gen_devanagari.py
 
 # ---- 2. スクリプトを実行ファイルに焼き込む ----
 # ★ファイルを外に置くと「同梱してある」という主張が配布の形に依存してしまう
@@ -92,7 +95,7 @@ done
 # ★配布では実行ファイルの隣、開発機では vendor/ の下。どちらでも解決できるよう両方。
 LDFLAGS="$LDFLAGS -L$HECHIMA_DIR/$ARCH -lhechima -Wl,-rpath,\$ORIGIN:\$ORIGIN/$HECHIMA_DIR/$ARCH"
 
-SRC_C="main.c text.c wakachi.c tsunagi.c josa.c tsunagi_ko.c korean.c conv.c content_stub.c render.c plat_sdl.c glyph_ft.c input.c"
+SRC_C="main.c text.c wakachi.c tsunagi.c josa.c tsunagi_ko.c korean.c devanagari.c conv.c content_stub.c render.c plat_sdl.c glyph_ft.c input.c"
 
 OBJS=""
 for f in $SRC_C; do
@@ -122,7 +125,8 @@ $CXX -o test_reply "$OBJ/test_reply.o" "$OBJ/text.o" "$OBJ/wakachi.o" "$OBJ/tsun
 # shellcheck disable=SC2086
 $CC $CFLAGS -c test_input.c -o "$OBJ/test_input.o"
 # shellcheck disable=SC2086
-$CC -o test_input "$OBJ/test_input.o" "$OBJ/input.o" "$OBJ/korean.o" "$OBJ/text.o"
+$CC -o test_input "$OBJ/test_input.o" "$OBJ/input.o" "$OBJ/korean.o" \
+    "$OBJ/devanagari.o" "$OBJ/text.o"
 
 # 変換だけを SDL 抜きで走らせる小道具（★UI の前に変換の成立を見るため）
 # shellcheck disable=SC2086
