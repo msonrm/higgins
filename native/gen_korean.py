@@ -67,6 +67,8 @@ coda_cycle = pairs("KOREAN_CODA_CYCLE")
 add_i = pairs("KOREAN_NUCLEUS_ADD_I")
 add_aeo = pairs("KOREAN_NUCLEUS_ADD_AEO")
 double_coda = nested("KOREAN_DOUBLE_CODA")
+row_names = re.findall(r'"([^"]+)"', block("KOREAN_ROW_NAMES"))
+assert len(row_names) == 10, row_names
 
 
 def row(vals):
@@ -97,6 +99,11 @@ out = [
     "};",
     "static const unsigned char KO_CODA_FOR_ROW[10] = {",
     row(coda_row),
+    "};",
+    "",
+    "/* 行の見出し（互換ジャモ）。★行インジケータに出す —— 日本語の「あ」に当たる。 */",
+    "static const unsigned short KO_ROW_CHAR[10] = {",
+    "    " + " ".join(f"0x{ord(c):04X}," for c in row_names),
     "};",
     "",
     "/* フェイスボタン → 중성（RT で y 系 + ㅣ の層に替わる） */",
