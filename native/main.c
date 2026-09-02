@@ -1069,6 +1069,8 @@ static void interactive(void)
             caret = 0;
             fixed = 0;
             gm.eagerSet = 0;
+            ko_commit(&ko);
+            punct_break();             /* ★送ったら巡回も切る（欄が空になったので） */
             dirty = 1;
             send(typed, typed_n);
         }
