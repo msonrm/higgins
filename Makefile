@@ -132,6 +132,9 @@ test-api:
 #   走らせる（native/test_reply）。
 #   ★これが段階 B の芯 —— wakachi / tsunagi は Python・JS・C の **3 実装**になったので、
 #   片方の経路でしか通らない値は、もう片方で必ず落ちる。3 つをここで縛る。
+#   ★**入力（合成）もここで見る** —— native/test_input は SDL を開かずに
+#      gp_step + ko_apply を走らせる。★`input.h` は前から「ゴールデンを test_input で
+#      照合する」と書いていたが、**その test_input は存在しなかった**（2026-09-02）。
 #   ★★**韓国語も同じ縛りに入れる**（josa / tsunagi_ko は Python と C の 2 実装）。
 #      規則の表は Python から焼くので（tools/gen_josa.py）、ずれるとしたら手順の側。
 #   ※ SDL / FreeType が無い環境では飛ばす（1 つのシェルで書くこと ―― make は行ごとに
@@ -152,7 +155,11 @@ test-native:
 	      || { echo 'FAIL: native の韓国語が CLI 版と違う応答を返す'; \
 	           grep -v '^$$' experiments/ko_doctor.out | diff -u - $(BUILD)/native-ko.out | head -20; \
 	           exit 1; }; \
-	    echo 'OK: native 版と CLI 版の応答が一致（日本語・韓国語）'; \
+	    ./native/test_input > $(BUILD)/ko-input.out; \
+	    diff -u experiments/ko_input.out $(BUILD)/ko-input.out > /dev/null \
+	      || { echo 'FAIL: 韓国語の入力（合成）が期待と違う'; \
+	           diff -u experiments/ko_input.out $(BUILD)/ko-input.out | head -20; exit 1; }; \
+	    echo 'OK: native 版と CLI 版の応答が一致（日本語・韓国語）/ 韓国語の合成も一致'; \
 	fi
 
 clean:

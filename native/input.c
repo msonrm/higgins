@@ -1,6 +1,7 @@
 /* GamepadEngine 状態機械の C 移植。挙動は machine.ts / ops.ts と同一(変更しない)。 */
 #include "input.h"
 #include "tables.h"
+#include "korean_tables.h"
 
 /* RT 連打サイクル: 1打=ん, 2打=を, 3打=んを, 4打で ん へ戻る */
 static const unsigned short RT_CYCLE[3][2] = {{0x3093, 0}, {0x3092, 0}, {0x3093, 0x3092}};
@@ -11,6 +12,7 @@ void gp_init(GpMachine *s)
     static const GpMachine zero;
     *s = zero;
     s->prevVowelIndex = -1;
+    s->korAllReleased = 1;      /* ★真から始める（machine.ts の初期値） */
 }
 
 void gp_sync_prev(GpMachine *s, const GpFrame *f)
@@ -220,9 +222,107 @@ static int step_english(GpMachine *s, const GpFrame *f, GpAction out[4])
     return n;
 }
 
-int gp_step(GpMachine *s, int english, const GpFrame *f, GpAction out[4])
+/* 韓国語: ハングルの合成入力（labo web の stepKorean の移植）。
+ *
+ * 左手＝子音行 + 右手＝母音の同時押しで 1 音節。★**母音を伴わない D-pad は받침**
+ * になる（2 벌식 の作法）。LT は ㅇ받침 —— 行 0（中立 = 何も押していない）は
+ * D-pad では表せないため。
+ * ★合成そのものは korean.c が持つ。ここは「何をするか」を決めるだけ。
+ */
+static int step_korean(GpMachine *s, const GpFrame *f, GpAction out[4])
 {
-    return english ? step_english(s, f, out) : step_japanese(s, f, out);
+    int n = 0;
+    const int v = f->vowel >= 0 ? f->vowel : 0;
+    const int dpad = f->consonantCount > 0;
+    const int prevDpad = s->prevConsonantCount > 0;
+
+    if (f->vowelNow) {
+        const int onset = KO_ONSET_FOR_ROW[f->row >= 0 && f->row < 10 ? f->row : 0];
+        const int nucleus = f->rtNow ? KO_NUCLEUS_SHIFTED[v] : KO_NUCLEUS_BASE[v];
+        const int rowChanged = f->row != s->prevRow;
+        const int vowelChanged = f->vowel != s->prevVowelIndex;
+        int emit = 0, replace = 0;
+
+        if (!s->prevVowelPressed) {
+            emit = 1;
+        } else if (rowChanged || vowelChanged) {
+            /* ★子音を離しての行変化は「打ち直し」ではないので出さない（日本語と同じ判断） */
+            const int released = rowChanged && f->consonantCount < s->prevConsonantCount;
+            if (!released) {
+                emit = 1;
+                replace = s->eagerSet && (f->now - s->eagerTime) < GP_CHORD_WINDOW_MS;
+            }
+        }
+        if (emit && n < 4) {
+            out[n].type = GPA_KO_SYLLABLE;
+            out[n].onset = onset;
+            out[n].nucleus = nucleus;
+            out[n].replace = replace;
+            n++;
+            s->eagerSet = 1;
+            s->eagerTime = f->now;
+            s->korAllReleased = 0;
+            s->korPatchimRollback = 0;
+            if (f->rtNow)
+                s->rtUsed = 1;
+        }
+    }
+    if (s->prevVowelPressed && !f->vowelNow)
+        s->eagerSet = 0;
+
+    if (!dpad && !f->vowelNow && !f->ltNow) {      /* 全部離した */
+        s->korAllReleased = 1;
+        s->korPatchimRollback = 0;
+    }
+    if (dpad && f->consonantCount < s->prevConsonantCount && s->korPatchimRollback)
+        s->korPatchimRollback = 0;
+
+    if (!f->vowelNow && dpad) {
+        if (!prevDpad && s->korAllReleased && n < 4) {          /* 新しく押した → 받침 */
+            out[n].type = GPA_KO_PATCHIM;
+            out[n].coda = KO_CODA_FOR_ROW[f->row >= 0 && f->row < 10 ? f->row : 0];
+            n++;
+            s->korPatchimRollback = 1;
+            s->korAllReleased = 0;
+        } else if (f->row != s->prevRow && s->korPatchimRollback && n < 4) {
+            /* ★押したまま行を変えた → 戻してから付け直す（押し間違いの直し） */
+            out[n].type = GPA_KO_PATCHIM;
+            out[n].coda = KO_CODA_FOR_ROW[f->row >= 0 && f->row < 10 ? f->row : 0];
+            out[n].revert = 1;
+            n++;
+        }
+    }
+
+    /* LT = ㅇ받침（行 0 は D-pad では押せない） */
+    if (f->ltNow && !s->prevLT && !f->vowelNow && !dpad && s->korAllReleased && n < 4) {
+        out[n].type = GPA_KO_PATCHIM;
+        out[n].coda = KO_CODA_FOR_ROW[0];
+        n++;
+        s->korAllReleased = 0;
+    }
+
+    /* RT = 単押しのリリースで ㅣ 付加の複合母音（押しながらは母音の層の切替） */
+    if (f->rtNow && !s->prevRT)
+        s->rtUsed = 0;
+    if (!f->rtNow && s->prevRT) {
+        if (!s->rtUsed && !f->ltNow && n < 4)
+            out[n++].type = GPA_KO_ADD_I;
+        s->rtUsed = 0;
+    }
+    return n;
+}
+
+int gp_step(GpMachine *s, int lang, const GpFrame *f, GpAction out[4])
+{
+    for (int i = 0; i < 4; i++) {
+        static const GpAction zero;
+        out[i] = zero;                  /* ★毎回ゼロにする（前の指示が残ると黙って効く） */
+    }
+    switch (lang) {
+    case GP_EN: return step_english(s, f, out);
+    case GP_KO: return step_korean(s, f, out);
+    default:    return step_japanese(s, f, out);
+    }
 }
 
 /* ---- ops.ts: 合成末尾への解決 ---- */

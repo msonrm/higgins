@@ -1,7 +1,9 @@
 /* GamepadEngine の状態機械の C 移植(labo web/src/gamepad/machine.ts + ops.ts)。
  *
  * 決定的な純核のみ。ボタン読み取り・時間の供給・バッファ管理はホスト側。
- * ゴールデン: labo の 35 件を test_input(ホストビルド)で照合する。
+ * ゴールデン: native/test_input（ホストビルド）。★2026-09-02 まで**この行だけ
+ *   あって test_input は存在しなかった** —— 韓国語の合成ぶんを置いた。
+ *   日本語・英語は台本（*.script）が画面ごと見ている。
  * ★移植元(TS)と同じ挙動を 2 か所で持つことになるため、直すときは両方を見ること。
  */
 #ifndef GP_INPUT_H
@@ -37,21 +39,32 @@ typedef struct {
     /* 英語のシフト。★**3 つは同時に立たない**（下の巡回で必ず 1 つだけになる）——
        立てるようにしていたら、△ が字で解けた瞬間に ⇧ が現れる、という形で実機に出た。 */
     int engShiftNext, engCapsLock, engSmartCaps, engLTHolding, engLTPressTime;
+    /* 韓国語。★korAllReleased は**初期値が真** —— 何も押していない状態から
+       D-pad を押したら받침ではなく音節の始まり、という区別に要る（machine.ts と同じ）。 */
+    int korAllReleased, korPatchimRollback;
 } GpMachine;
 
-enum { GPA_KANA, GPA_YOUON };
+/* 言語（席）。★もとは `int english` の真偽値だったが、韓国語で 3 つ目が来たので
+   enum に昇格させた。main.c 側の `english` は段階 4 で片づける。 */
+enum { GP_JA = 0, GP_EN = 1, GP_KO = 2 };
+
+/* 韓国語の 3 つは**字ではなく指示**（合成は korean.c が持つ）——
+   同じ音節でも「新しく置く / 받침を足す / 母音を替える」で意味が違うため。 */
+enum { GPA_KANA, GPA_YOUON, GPA_KO_SYLLABLE, GPA_KO_PATCHIM, GPA_KO_ADD_I };
 
 typedef struct {
     int type;
     unsigned short text[2];  /* GPA_KANA のみ */
     int tlen;
     int replace;
+    /* 韓国語（GPA_KO_*）。revert = いまの받침を戻してから付け直す */
+    int onset, nucleus, coda, revert;
 } GpAction;
 
 void gp_init(GpMachine *s);
 /* 1 フレームを処理してアクションを out に詰める(最大 4)。戻り値 = 個数。
  * 呼び出し後にホストが gp_sync_prev を呼ぶこと(resolver.stepFrame と同じ順)。 */
-int gp_step(GpMachine *s, int english, const GpFrame *f, GpAction out[4]);
+int gp_step(GpMachine *s, int lang, const GpFrame *f, GpAction out[4]);
 void gp_sync_prev(GpMachine *s, const GpFrame *f);
 /* 拗音後置シフト / 濁点トグルを合成末尾に解決する。
  * 戻り値 = 出力長(0 = 無反応)。*replace = 末尾から差し替える字数。 */

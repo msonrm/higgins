@@ -34,6 +34,8 @@ native/script_en.txt
 native/script_ko.txt
 native/higgins
 native/test_reply
+native/test_input
+native/korean_tables.h
 *.raw
 # 変換エンジンの実体（5.5MB + 19MB）と学習ファイル。
 # ★取り込みは tools/vendor_hechima_native.sh、再現手順は labo の link_linux.sh。
