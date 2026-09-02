@@ -21,6 +21,7 @@
 #include "wakachi.h"
 #include "josa.h"
 #include "korean.h"
+#include "devanagari.h"
 #include "tsunagi.h"
 #include "tsunagi_ko.h"
 #include "eliza_bridge.h"
@@ -42,6 +43,10 @@ extern const char _binary_script_ko_txt_start[];
 extern const char _binary_script_ko_txt_end[];
 extern const char _binary_script_en_txt_start[];
 extern const char _binary_script_en_txt_end[];
+/* ★ヒンディー語の相手は**まだ仮置き**（doctor/hi.txt の頭書き）—— 席だけ先に立てて
+   デーヴァナーガリー入力を実機で打てるようにしている。訳が入れば差し替えるだけ。 */
+extern const char _binary_script_hi_txt_start[];
+extern const char _binary_script_hi_txt_end[];
 
 /* ---- 画面 ---- */
 
@@ -61,8 +66,12 @@ static void paint_screen(uint16_t color)
 }
 
 /* いま話している相手（席）。★もとは `english` の真偽値だったが、韓国語で 3 つ目が
-   来たので enum にした。**日本語だけが変換を通る**ので、判定は seat != SEAT_JA。 */
-enum { SEAT_JA = 0, SEAT_EN = 1, SEAT_KO = 2, SEAT_N = 3 };
+   来たので enum にした。**日本語だけが変換を通る**ので、判定は seat != SEAT_JA。
+   ★★**ヒンディー語（SEAT_HI）だけは入力の骨格が違う** —— かなの席（日/英/韓）は
+     「子音行 × 母音」の同時押しだが、デーヴァナーガリーは「LS の latch × D-pad」で、
+     両スティックとも他の役に取られる。だから物理入力の解釈から**別の道**になる
+     （`GpFrameDeva` / `gp_step_deva`。input.h の注記）。 */
+enum { SEAT_JA = 0, SEAT_EN = 1, SEAT_KO = 2, SEAT_HI = 3, SEAT_N = 4 };
 static int seat;
 
 /* 右スティック↓ の連打（句読点の巡回）。★**file scope にあるのは、
@@ -74,9 +83,12 @@ static void punct_break(void) { punct_n = 0; punct_at = 0; }
 
 static int seat_slot(void)
 {
-    return seat == SEAT_EN ? HG_EN : seat == SEAT_KO ? HG_KO : HG_JA;
+    return seat == SEAT_EN ? HG_EN : seat == SEAT_KO ? HG_KO
+         : seat == SEAT_HI ? HG_HI : HG_JA;
 }
 
+/* ★かなの席の言語。**SEAT_HI では呼ばない** —— デーヴァナーガリーは
+   `gp_step_kana` を通らないので、GP_* の語彙に対応するものが無い。 */
 static int seat_lang(void)
 {
     return seat == SEAT_EN ? GP_EN : seat == SEAT_KO ? GP_KO : GP_JA;
@@ -88,7 +100,10 @@ static void say(const char *utf8, uint16_t color)
     uint16_t buf[1024];
     const int max = (int)(sizeof buf / sizeof *buf);
     /* ★出口は席で替わる。韓国語は**空白に意味がある**（띄어쓰기）ので、
-       日本語の tsunagi（日本語に隣接する空白を全部消す）は使えない。 */
+       日本語の tsunagi（日本語に隣接する空白を全部消す）は使えない。
+       ★★**ヒンディー語は tsunagi のままでよい** —— あれが空白を消すのは
+         「日本語に隣接する空白」だけで（tsunagi.c の is_ja）、デーヴァナーガリーは
+         その 5 範囲のどれにも入らない。英語と同じ扱いになる。 */
     const int n = seat == SEAT_KO ? tsunagi_ko(utf8, buf, max)
                                   : tsunagi(utf8, buf, max);
     hist_line(buf, n, color);
@@ -98,6 +113,11 @@ static void say(const char *utf8, uint16_t color)
 
 static GpMachine gm;
 static KoComposer ko;    /* 韓国語の合成中の音節（席が韓国語のときだけ動く） */
+/* デーヴァナーガリー（席がヒンディー語のときだけ動く）。★**2 つ要る** ——
+   `dvm` は打鍵の状態機械（varga の latch・非 varga 層・RT の使い道）、
+   `dv` は合成中の akshara。韓国語で `gm` と `ko` が分かれているのと同じ切り分け。 */
+static DevaMachine dvm;
+static Deva dv;
 /* ★Zenmai は 36 字（Zork のコマンドは短い）。Higgins は**自由文**を打つので広げる。
    ★**打つのは命令ではなく「相談」**なので、1 行に収まる前提そのものが違う
      （欄は下の draw_input が複数行で描き、溢れたぶんは流れる）。 */
@@ -190,6 +210,7 @@ static void caret_set(int pos)
     caret = pos;
     fixed = pos;
     ko_commit(&ko);       /* ★動かしたら合成も切る（前の音節に받침が付くのを防ぐ） */
+    deva_commit(&dv);     /* ★同じ理由 —— 動かした先の字に matra が乗ってしまう */
     punct_break();
 }
 
@@ -626,46 +647,6 @@ static int pad_vowel(int p)
          : (p & BTN_CIR) ? 3 : (p & BTN_X) ? 4 : -1;
 }
 
-static GpFrameKana frame_of(int p, int ms)
-{
-    const int cc = !!(p & BTN_LEFT) + !!(p & BTN_UP) + !!(p & BTN_RIGHT)
-                 + !!(p & BTN_DOWN) + !!(p & BTN_L1);
-    const int vowel = pad_vowel(p);
-    GpFrameKana f = { ms, pad_row(p), vowel, vowel >= 0,
-                  !!(p & BTN_L2), !!(p & BTN_R2), cc };
-    return f;
-}
-
-/* ★対話ループに入るときの引き継ぎ。**押されたままのものを「もう見た」ことにする**。
-   忘れると、押しっぱなしのボタンに応じた字が入った状態で始まる
-   （Zenmai が 2026-08-29 に実機で踏んだ形。台本が素通りしていた）。 */
-static void carry_over_pad(void)
-{
-    pad_prev = pad_read();
-    if (pad_prev < 0)
-        pad_prev = 0;
-    GpFrameKana f = frame_of(pad_prev, 0);
-    gp_sync_prev_kana(&gm, &f);
-}
-
-/* 変換を確定して、打っている字（comp[]）へ移す。
- * ★**確定と送信を分ける**（実機の指摘・2026-08-31）—— IME の作法では 1 回目の
- *   確定で未確定が消え、送るのはもう一度。変換したまま送ると打ち直す隙が無い。
- * ★変換中に打ち始めたときも、まずこれを通す（その時点の選択で確定して続きを打つ）。
- * ★gm（かなの状態機械）はここでは触らない —— 打鍵の途中に呼ばれるので、
- *   eager の差し替え位置を壊してしまう。
- */
-static void conv_accept(void)
-{
-    uint16_t out[COMP_MAX * 2];
-    const int n = conv_commit(out, (int)(sizeof out / sizeof *out));
-    /* ★変換していたのは **comp[fixed..caret)**。そこだけを確定文字列に差し替える。
-       ★以前は「fixed から末尾まで」を捨てていたので、**カーソルより後ろの字が
-         消えていた**（文字列の途中に打って変換したとき・実機の指摘 2026-09-01）。 */
-    comp_insert(out, n, caret - fixed);
-    fixed = caret;                     /* 挿入後の caret が新しい確定境界 */
-}
-
 /* ---- 左スティックの向き ----
  * ★**大きい方の軸だけを見る**（engine.ts の dominant と同じ）。斜めに倒したときに
  *   2 方向が同時に発火すると、変換中は「候補送り + 文節移動」が一度に起きる。
@@ -684,6 +665,91 @@ static void ls_dirs(const uint8_t axes[4], int out[4])
         out[dx < 0 ? 0 : 1] = 1;           /* ← → */
     else
         out[dy < 0 ? 2 : 3] = 1;           /* ↑ ↓ */
+}
+
+/* ---- パッド → デーヴァナーガリー ----
+ *
+ * ★★**かなの席とは物理入力の読み方が違う。** 子音は「LS で latch した varga ×
+ *   D-pad の位置」の**2 次元**で決まり（LB がその varga の鼻音）、面ボタンが母音。
+ *   ★だから両スティックとも埋まり、**キャレット移動は RT+LS へ退避**している。
+ *   実測で決めた割り当てで、逆にすると子音の 69% で RT を噛む（TODO の H2 の節）。
+ * ★**RS ← と ↓ はここでは読まない** —— BS と句読点は席に依存しない操作なので、
+ *   かなの席と同じ場所（interactive の rs の分岐）で見る。
+ */
+
+/* varga 内の位置。★D-pad ↑→↓← が index 0..3（devanagari_tables.h の並び）。 */
+static int pad_deva_dpad(int p)
+{
+    return (p & BTN_UP) ? 0 : (p & BTN_RIGHT) ? 1 : (p & BTN_DOWN) ? 2
+         : (p & BTN_LEFT) ? 3 : -1;
+}
+
+/* 左スティックの向き（0=中立 1=↑ 2=→ 3=↓ 4=←）。
+   ★★**ls_dirs とは並びが違う。** あちらは「← → ↑ ↓」の 4 本の旗、こちらは
+     `GpFrameDeva.lsDir` の 1 つの番号で、中立が 0（＝ LS を倒さない状態が प varga）。
+     ★varga 表の並び（音韻の順）とも別で、これは**方向の順** —— 変換は
+     input.c の varga_of が持つ（そこを間違えて test_input が捕まえた）。 */
+static int pad_deva_ls(const uint8_t axes[4])
+{
+    int d[4];
+    ls_dirs(axes, d);
+    return d[2] ? 1 : d[1] ? 2 : d[3] ? 3 : d[0] ? 4 : 0;
+}
+
+/* rs = pad_rstick_flick の戻り（2=↑ anusvara / 3=→ 長母音）。 */
+static GpFrameDeva deva_frame_of(int p, const uint8_t axes[4], int rs, int ms)
+{
+    GpFrameDeva f = { ms, pad_deva_ls(axes), pad_deva_dpad(p), !!(p & BTN_L1),
+                      pad_vowel(p), !!(p & BTN_L2), !!(p & BTN_R2), !!(p & BTN_L3),
+                      rs == 2, rs == 3 };
+    return f;
+}
+
+static GpFrameKana frame_of(int p, int ms)
+{
+    const int cc = !!(p & BTN_LEFT) + !!(p & BTN_UP) + !!(p & BTN_RIGHT)
+                 + !!(p & BTN_DOWN) + !!(p & BTN_L1);
+    const int vowel = pad_vowel(p);
+    GpFrameKana f = { ms, pad_row(p), vowel, vowel >= 0,
+                  !!(p & BTN_L2), !!(p & BTN_R2), cc };
+    return f;
+}
+
+/* ★対話ループに入るときの引き継ぎ。**押されたままのものを「もう見た」ことにする**。
+   忘れると、押しっぱなしのボタンに応じた字が入った状態で始まる
+   （Zenmai が 2026-08-29 に実機で踏んだ形。台本が素通りしていた）。 */
+static void carry_over_pad(void)
+{
+    uint8_t axes[4] = { 0x80, 0x80, 0x80, 0x80 };
+    pad_prev = pad_read_ex(axes);
+    if (pad_prev < 0)
+        pad_prev = 0;
+    GpFrameKana f = frame_of(pad_prev, 0);
+    gp_sync_prev_kana(&gm, &f);
+    /* ★★**デーヴァナーガリーの席にも同じ引き継ぎが要る。** こちらは LS の latch と
+       「RT を離したら halant」があるので、忘れると**入った瞬間に子音が 1 つ出る**か
+       **halant が 1 つ乗る**。★席ごとに 2 回呼ぶ形にすると、いつか片方を忘れる
+       （punct_break を comp_insert の中でやっているのと同じ判断）ので、ここで両方。 */
+    GpFrameDeva df = deva_frame_of(pad_prev, axes, 0, 0);
+    gp_sync_prev_deva(&dvm, &df);
+}
+
+/* 変換を確定して、打っている字（comp[]）へ移す。
+ * ★**確定と送信を分ける**（実機の指摘・2026-08-31）—— IME の作法では 1 回目の
+ *   確定で未確定が消え、送るのはもう一度。変換したまま送ると打ち直す隙が無い。
+ * ★変換中に打ち始めたときも、まずこれを通す（その時点の選択で確定して続きを打つ）。
+ * ★gm（かなの状態機械）はここでは触らない —— 打鍵の途中に呼ばれるので、
+ *   eager の差し替え位置を壊してしまう。
+ */
+static void conv_accept(void)
+{
+    uint16_t out[COMP_MAX * 2];
+    const int n = conv_commit(out, (int)(sizeof out / sizeof *out));
+    /* ★変換していたのは **comp[fixed..caret)**。そこだけを確定文字列に差し替える。
+       ★以前は「fixed から末尾まで」を捨てていたので、**カーソルより後ろの字が
+         消えていた**（文字列の途中に打って変換したとき・実機の指摘 2026-09-01）。 */
+    comp_insert(out, n, caret - fixed);
+    fixed = caret;                     /* 挿入後の caret が新しい確定境界 */
 }
 
 /* ---- メニュー ----
@@ -834,7 +900,14 @@ static void send(const uint16_t *typed, int n)
        ★韓国語は**띄어쓰기があるので分かち書きは要らず**、語にくっついた
          조사・어미 を剥がすだけ（josa）。 */
     ko_commit(&ko);
-    if (seat == SEAT_EN)
+    deva_commit(&dv);
+    /* ★★**ヒンディー語も英語と同じ道**（そのまま渡す）—— 空白があるので分かち書きは
+       要らず、後置詞が分離語なので助詞剥がしも要らない。ELIZA から見ると
+       「空白区切りの言語が 1 つ増えた」だけになる。
+       ★ただし **danda `।` は語にくっついたまま**なので、「नमस्ते।」は「नमस्ते」と
+         別のトークンになる。切るのが正しいが、それは訳（段 H3）と一緒に決める
+         —— 韓国語で ASCII の句読点を切っていなかったのと同じ形。 */
+    if (seat == SEAT_EN || seat == SEAT_HI)
         u16_to_u8(typed, n, buf, (int)sizeof buf);
     else if (seat == SEAT_KO)
         josa(typed, n, buf, (int)sizeof buf);
@@ -844,6 +917,113 @@ static void send(const uint16_t *typed, int n)
     hist_blank();
     say(hg_eliza_response(seat_slot(), buf), INK);
     scroll_new();
+}
+
+/* 打っている行を ELIZA へ渡して欄を空にする。戻り値 = 送ったか。
+ * ★**関数にしてある理由**: 呼ぶ場所が 2 つある —— かなの席の L3（3 段目）と、
+ *   デーヴァナーガリーの席の RT+L3（`DEVA_OP_COMMIT`）。★同じ後始末
+ *   （合成を切る・巡回を切る・eager を落とす）を 2 か所に書くと必ずずれる。
+ */
+static int send_line(void)
+{
+    if (!clen)
+        return 0;
+    /* 遡っている最中の確定は、まず下端へ跳んでひと呼吸置く */
+    if (view_px < hist_total() - body_h) {
+        view_bottom();
+        render_window();
+        wait_fields(18);
+    }
+    static uint16_t typed[COMP_MAX * 2];
+    const int typed_n = clen;
+    for (int i = 0; i < clen; i++)
+        typed[i] = comp[i];
+    clen = 0;
+    caret = 0;
+    fixed = 0;
+    gm.eagerSet = 0;
+    ko_commit(&ko);
+    deva_commit(&dv);
+    punct_break();                     /* ★送ったら巡回も切る（欄が空になったので） */
+    send(typed, typed_n);
+    return 1;
+}
+
+/* ---- デーヴァナーガリーの席の 1 フレーム ----
+ *
+ * ★入力層（gp_step_deva）が返すのは**字ではなく指示**で、合成（schwa の置換 /
+ *   長母音への昇格 / トグル）は devanagari.c が持つ。ここはその 2 つを繋ぐだけ。
+ * ★★**キャレット移動と改行もここに来る**（DEVA_OP_CURSOR / DEVA_OP_COMMIT）——
+ *   席に依存しない操作だが、「RT が何に使われたか」の判定（halant を抑止するか）が
+ *   入力側にあるので、同じ条件をここへもう一度書くと**二重になって必ずずれる**。
+ * 戻り値 = 描き直しが要るか。
+ */
+static int step_deva_frame(int p, const uint8_t axes[4], int rs, int fields)
+{
+    GpFrameDeva f = deva_frame_of(p, axes, rs, fields * 17);
+    GpAction a[4];
+    const int n = gp_step_deva(&dvm, &f, a);
+    int dirty = 0;
+    for (int i = 0; i < n; i++) {
+        DevaOut o;
+        switch (a[i].deva_op) {
+        case DEVA_OP_CONSONANT:
+            o = deva_consonant(&dv, a[i].deva_ch);
+            break;
+        case DEVA_OP_VOWEL:
+            /* ★matra を先に試し、子音が無ければ独立母音 —— **どちらになるかは
+               合成器が状態を見て決める**ので、ここは両方を渡すだけ。 */
+            o = deva_matra(&dv, a[i].deva_ch);
+            if (!o.ok)
+                o = deva_vowel(&dv, a[i].deva_alt);
+            break;
+        case DEVA_OP_HALANT:   o = deva_halant(&dv); break;
+        case DEVA_OP_NUKTA:    o = deva_nukta(&dv); break;
+        case DEVA_OP_ANUSVARA: o = deva_toggle_anusvara(&dv); break;
+        case DEVA_OP_VISARGA:  o = deva_visarga(&dv); break;
+        case DEVA_OP_LONG:     o = deva_long_shift(&dv); break;
+        case DEVA_OP_CURSOR: {
+            /* ★向きは 横 -1/+1・縦 -2/+2。**符号を戻してから読む**
+               （GpAction は unsigned short で運んでいる）。 */
+            const int d = (short)a[i].deva_ch;
+            if (d == -1 && caret > 0) {
+                caret_set(caret - 1);
+                dirty = 1;
+            } else if (d == 1 && caret < clen) {
+                caret_set(caret + 1);
+                dirty = 1;
+            } else if (d == -2) {
+                if (caret_line_move(-1))
+                    dirty = 1;
+                else if (!clen)
+                    view_scroll(-SCROLL_STEP);
+            } else if (d == 2) {
+                if (caret_line_move(1))
+                    dirty = 1;
+                else
+                    view_scroll(SCROLL_STEP);
+            }
+            continue;
+        }
+        case DEVA_OP_COMMIT:
+            if (send_line())
+                dirty = 1;
+            continue;
+        default:
+            /* ★★**default で「それらしい処理」に落とさない。** 新しい op を足した
+               ときに黙って別のものになる —— test_input で実際に踏んだ形
+               （CURSOR が long_shift になり `क` が `का` になっていた）。 */
+            continue;
+        }
+        if (o.ok) {
+            /* ★`o.len` は 0 のことがある（トグルを外す・backspace）——
+               `comp_insert(text, 0, replace)` がそのまま「消す」になる。 */
+            comp_insert(o.text, o.len, o.replace);
+            dirty = 1;
+        }
+    }
+    gp_sync_prev_deva(&dvm, &f);
+    return dirty;
 }
 
 /* ★マッピングは GIME 準拠（docs/gamepad-mapping.md）。
@@ -881,6 +1061,8 @@ static void interactive(void)
     uint16_t prev_mark = 0;
 
     gp_init(&gm);
+    deva_machine_init(&dvm);
+    deva_init(&dv);
     clen = 0;
     caret = 0;
     fixed = 0;
@@ -898,39 +1080,57 @@ static void interactive(void)
         const int edge = p & ~pad_prev;
         pad_prev = p;
 
-        /* かな（同時押し）*/
-        GpFrameKana f = frame_of(p, fields * 17);
-        const int row = f.row;
-        GpAction a[4];
-        const int an = gp_step_kana(&gm, seat_lang(), &f, a);
-        for (int i = 0; i < an; i++) {
-            /* ★変換中に打ち始めたら、その時点の選択で確定してから入れる
-               （実機の指摘・2026-08-31）。IME の作法。 */
-            if (conv_active())
-                conv_accept();
-            if (a[i].type == GPA_KANA) {
-                comp_insert(a[i].text, a[i].tlen, a[i].replace);
-            } else if (a[i].type == GPA_YOUON) {   /* 後置の拗音シフト */
-                uint16_t o_[2];
-                int rep;
-                const int l = gp_resolve_youon(comp, caret, o_, &rep);
-                if (l && rep > 0)
-                    comp_insert(o_, l, rep);
-            } else {                   /* GPA_KO_*（音節・받침・複合母音）*/
-                uint16_t ch;
-                int rep;
-                if (ko_apply(&ko, &a[i], &ch, &rep))
-                    comp_insert(&ch, 1, rep);
-            }
-            dirty = 1;
-        }
-        gp_sync_prev_kana(&gm, &f);
-
-        /* 右スティックのフリック（1=← 2=↑ 3=→ 4=↓） */
+        /* 右スティックのフリック（1=← 2=↑ 3=→ 4=↓）。
+           ★★**席の分岐より先に読む。** デーヴァナーガリーでは ↑（anusvara）と
+             →（長母音）が**フレームの一部**として gp_step_deva に渡るので、
+             かなの席のように「あとから見る」ことができない。
+           ★pad_rstick_flick は 1 フレームに 1 回だけ呼ぶこと（内部にエッジの記憶がある）。 */
         const int rs = pad_rstick_flick(axes);
-        if (rs)
-            gp_break_rt_cycle(&gm);
-        if (rs == 2) {                 /* ↑ 濁点 / 英語 = アポストロフィ / 韓国語 = 子音サイクル */
+
+        /* 行インジケータの中身を決める値。★**席で意味が違う** —— かなの席では
+           子音行（0..9）、デーヴァナーガリーでは latch した varga と層。
+           ★中身が (row, seat, mark) だけで決まる、という約束はどちらでも保つ。 */
+        int row;
+        if (seat == SEAT_HI) {
+            /* ★デーヴァナーガリー（別の入口）。かなの状態機械（gm）は動かさない。 */
+            if (step_deva_frame(p, axes, rs, fields))
+                dirty = 1;
+            row = dvm.lsLatch * 4 + dvm.nonVarga * 2 + ((p & BTN_L2) != 0);
+        } else {
+            /* かな（同時押し）*/
+            GpFrameKana f = frame_of(p, fields * 17);
+            row = f.row;
+            GpAction a[4];
+            const int an = gp_step_kana(&gm, seat_lang(), &f, a);
+            for (int i = 0; i < an; i++) {
+                /* ★変換中に打ち始めたら、その時点の選択で確定してから入れる
+                   （実機の指摘・2026-08-31）。IME の作法。 */
+                if (conv_active())
+                    conv_accept();
+                if (a[i].type == GPA_KANA) {
+                    comp_insert(a[i].text, a[i].tlen, a[i].replace);
+                } else if (a[i].type == GPA_YOUON) {   /* 後置の拗音シフト */
+                    uint16_t o_[2];
+                    int rep;
+                    const int l = gp_resolve_youon(comp, caret, o_, &rep);
+                    if (l && rep > 0)
+                        comp_insert(o_, l, rep);
+                } else {                   /* GPA_KO_*（音節・받침・複合母音）*/
+                    uint16_t ch;
+                    int rep;
+                    if (ko_apply(&ko, &a[i], &ch, &rep))
+                        comp_insert(&ch, 1, rep);
+                }
+                dirty = 1;
+            }
+            gp_sync_prev_kana(&gm, &f);
+            if (rs)
+                gp_break_rt_cycle(&gm);
+        }
+
+        /* ★↑ と → は**デーヴァナーガリーでは読まない** —— どちらもフレームの一部として
+           gp_step_deva へ渡してある（anusvara / 長母音）。ここで二重に見ない。 */
+        if (rs == 2 && seat != SEAT_HI) {   /* ↑ 濁点 / 英語 = アポストロフィ / 韓国語 = 子音サイクル */
             if (seat == SEAT_EN) {
                 const uint16_t ch = 0x0027;    /* ' */
                 comp_insert(&ch, 1, 0);
@@ -962,13 +1162,20 @@ static void interactive(void)
                 conv_cancel();
                 dirty = 1;
             } else if (caret) {
+                /* ★★デーヴァナーガリーでは**合成器にも消したことを伝える** ——
+                   伝えないと、消したあとの字に matra が乗ったり anusvara が
+                   トグルできたりする（韓国語で받침のキャンセルが落ちていたのと同じ形）。
+                   ★合成中でなければ何も返さないので、そのまま素の BS になる。 */
+                if (seat == SEAT_HI)
+                    deva_backspace(&dv);
                 comp_bs();
                 gm.eagerSet = 0;
                 ko_commit(&ko);        /* ★消した字に받침を足せてしまうのを防ぐ */
                 dirty = 1;
             }
         }
-        if (rs == 3) {                 /* → 長音「ー」/ 英語 = スラッシュ / 韓国語 = 複合母音 */
+        /* ★→ もデーヴァナーガリーでは読まない（長母音への昇格はフレームで渡してある）。 */
+        if (rs == 3 && seat != SEAT_HI) {   /* → 長音「ー」/ 英語 = スラッシュ / 韓国語 = 複合母音 */
             if (conv_active())
                 conv_accept();
             if (seat == SEAT_KO) {
@@ -1006,11 +1213,16 @@ static void interactive(void)
                  （日本語の わ行お段 `？` と同じ理由。gen_tables.py の注記）。
                ★`'` は DOCTOR の応答が引用に使う —— **機械が印字する字はユーザーも
                  打てる**、という日本語・英語で保たれている性質を韓国語でも保つ。 */
+            /* ★★**ヒンディー語は 空白 → danda `।` → double danda `॥`**
+                 （GIME の Devanagari モードと同じ順）。★空白が最初なのは英語と
+                 同じ理由 —— ELIZA は空白でしか語を切らない。 */
             static const uint16_t PUNCT_JA[] = { 0x3001, 0x3002, 0x3000 };
             static const uint16_t PUNCT_EN[] = { 0x0020, 0x002E, 0x002C };
             static const uint16_t PUNCT_KO[] = { 0x0020, 0x002E, 0x003F, 0x002C, 0x0027 };
+            static const uint16_t PUNCT_HI[] = { 0x0020, 0x0964, 0x0965 };
             const uint16_t *tbl = seat == SEAT_EN ? PUNCT_EN
-                                : seat == SEAT_KO ? PUNCT_KO : PUNCT_JA;
+                                : seat == SEAT_KO ? PUNCT_KO
+                                : seat == SEAT_HI ? PUNCT_HI : PUNCT_JA;
             const int steps = seat == SEAT_KO ? 5 : 3;
             int idx = step_n - 1;
             if (idx >= steps)
@@ -1023,6 +1235,7 @@ static void interactive(void)
             if (seat == SEAT_EN)
                 gm.engSmartCaps = 0;
             ko_commit(&ko);            /* ★記号が来たら音節はそこで終わり */
+            deva_commit(&dv);          /* ★同じ理由（記号に matra が乗らないように） */
             comp_insert(&ch, 1, rep);  /* ★ここで punct_break される */
             /* ★**入れたあとに覚え直す。** こうしておくと「巡回が続くのは、
                直前に入れたのがこの記号だったときだけ」が構造として保証される。 */
@@ -1056,9 +1269,10 @@ static void interactive(void)
                無くなるので、ELIZA 側に言語の判定を持ち込まずに済む。
                ★替わったことは**新しい相手の挨拶**で分かる（画面に出る唯一の印）。 */
             if (!clen) {
-                /* ★席が 3 つになったので**巡回**にした（日 → 英 → 韓 → 日）。
+                /* ★席が 3 つになったので**巡回**にした（日 → 英 → 韓 → ヒンディー → 日）。
                    ★2 択のときは「戻る」が自明だったが、3 つ以上では一周しないと
-                     戻れない —— そこはメニュー行きだが、まず巡回で実機に出す。 */
+                     戻れない —— そこはメニュー行きだが、まず巡回で実機に出す。
+                   ★★**4 つ目でここが限界に来ている**（TODO の残件 1 = メニュー）。 */
                 seat = (seat + 1) % SEAT_N;
                 /* GIME と同じくシフト状態は持ち越さない */
                 gm.engShiftNext = 0;
@@ -1068,6 +1282,19 @@ static void interactive(void)
                 gm.korAllReleased = 1;
                 gm.korPatchimRollback = 0;
                 ko_commit(&ko);
+                /* ★★デーヴァナーガリーも同じく持ち越さない。**そのうえで、いま
+                   押されているものを「もう見た」ことにする** —— しないと、Select を
+                   押した指が肩ボタンに掛かっていただけで、席に入った瞬間に子音や
+                   halant が 1 つ出る（carry_over_pad と同じ配慮）。
+                   ★ここで carry_over_pad を呼ばないのは、**あれがパッドを読み直す**から
+                     —— 台本の再生はポーリング回数が時間軸なので、1 回余分に読むと
+                     既存の台本が全部 1 コマずれる。 */
+                deva_machine_init(&dvm);
+                deva_init(&dv);
+                {
+                    GpFrameDeva df = deva_frame_of(p, axes, 0, 0);
+                    gp_sync_prev_deva(&dvm, &df);
+                }
                 punct_break();
                 hist_blank();
                 say(hg_eliza_greeting(seat_slot()), INK);
@@ -1089,38 +1316,27 @@ static void interactive(void)
             continue;
         }
 
-        if ((edge & BTN_L3) && conv_active()) {
-            /* ★1 回目の押し込みは**変換の確定**だけ（実機の指摘・2026-08-31）。
-               ELIZA へ渡すのはもう一度押したとき。 */
-            conv_accept();
-            gm.eagerSet = 0;
-            dirty = 1;
-        } else if ((edge & BTN_L3) && caret > fixed) {
-            /* ★変換していない**未確定のかな**も、まず確定するだけ（下線が外れる）。
-               送るのはもう一度押したとき —— 変換したときと同じ手数にする
-               （実機の指摘・2026-09-01。打ってすぐ送られるのは直感的でない）。 */
-            fixed = caret;
-            gm.eagerSet = 0;
-            dirty = 1;
-        } else if ((edge & BTN_L3) && clen) {               /* L3 = 確定して ELIZA へ */
-            /* 遡っている最中の確定は、まず下端へ跳んでひと呼吸置く */
-            if (view_px < hist_total() - body_h) {
-                view_bottom();
-                render_window();
-                wait_fields(18);
+        /* ★★**デーヴァナーガリーでは L3 を通さない** —— あちらでは L3 が
+           「非 varga 層に入る」で、送るのは **RT+L3**（gp_step_deva が
+           DEVA_OP_COMMIT で返し、step_deva_frame が send_line を呼ぶ）。
+           ★変換も未確定も無い席なので、かなの 3 段はそもそも意味を持たない。 */
+        if (seat != SEAT_HI) {
+            if ((edge & BTN_L3) && conv_active()) {
+                /* ★1 回目の押し込みは**変換の確定**だけ（実機の指摘・2026-08-31）。
+                   ELIZA へ渡すのはもう一度押したとき。 */
+                conv_accept();
+                gm.eagerSet = 0;
+                dirty = 1;
+            } else if ((edge & BTN_L3) && caret > fixed) {
+                /* ★変換していない**未確定のかな**も、まず確定するだけ（下線が外れる）。
+                   送るのはもう一度押したとき —— 変換したときと同じ手数にする
+                   （実機の指摘・2026-09-01。打ってすぐ送られるのは直感的でない）。 */
+                fixed = caret;
+                gm.eagerSet = 0;
+                dirty = 1;
+            } else if ((edge & BTN_L3) && send_line()) {    /* L3 = 確定して ELIZA へ */
+                dirty = 1;
             }
-            static uint16_t typed[COMP_MAX * 2];
-            const int typed_n = clen;
-            for (int i = 0; i < clen; i++)
-                typed[i] = comp[i];
-            clen = 0;
-            caret = 0;
-            fixed = 0;
-            gm.eagerSet = 0;
-            ko_commit(&ko);
-            punct_break();             /* ★送ったら巡回も切る（欄が空になったので） */
-            dirty = 1;
-            send(typed, typed_n);
         }
 
         /* ---- 左スティック ----
@@ -1131,7 +1347,17 @@ static void interactive(void)
          * ★リピートは**変換中はしない**（候補送りの暴走を防ぐ）。engine.ts と同じ判断。
          *   間隔も同じ（400ms 待って 85ms ごと ＝ 1 field 17ms なので 24 / 5）。
          */
-        {
+        if (seat == SEAT_HI) {
+            /* ★★**デーヴァナーガリーでは LS は varga の latch**（gp_step_deva が読む）。
+               ここでは**前フレームだけ覚え直す** —— 覚えないと、倒したまま席を戻した
+               ときにエッジとして発火して、いきなりキャレットが動く。 */
+            int ls[4];
+            ls_dirs(axes, ls);
+            for (int d = 0; d < 4; d++) {
+                ls_prev[d] = ls[d];
+                ls_at[d] = 0;
+            }
+        } else {
             int ls[4];
             ls_dirs(axes, ls);
             const int rt = (p & BTN_R2) != 0;
@@ -1221,6 +1447,16 @@ static void interactive(void)
                母音は面ボタンで、RT で層が替わる —— 印は付けない（英語のシフトと違い、
                ★押している間だけの層なので、状態として残らない）。 */
             ind[0] = ko_row_char(row);
+            ilen = 1;
+        } else if (seat == SEAT_HI) {
+            /* ★デーヴァナーガリーは**いま latch している varga の見出し字**
+               （無気無声 ＝ varnamala の頭）。非 varga 層のときはその層の頭。
+               ★★**latch なので「押している間」ではなく状態として残る** ——
+                 だから、ここに出ていないと**次に何が出るか分からない**。
+                 韓国語の行や日本語の「あ」より、この席では効きが大きい。
+               ★印は付けない —— 層（L3）は 1 子音で自動 OFF、LT は押している間だけで、
+                 どちらも「解除するまで残る」たぐいの状態ではない。 */
+            ind[0] = deva_head_char(&dvm, (p & BTN_L2) != 0);
             ilen = 1;
         } else if (seat == SEAT_EN) {
             ilen = gp_row_chars_en(row, ind, 4);
@@ -1317,6 +1553,12 @@ int main(void)
     const int len_ko = (int)(_binary_script_ko_txt_end - _binary_script_ko_txt_start);
     if (!hg_eliza_init(HG_KO, _binary_script_ko_txt_start, len_ko, 0))
         say("韓国語のスクリプトが読めない。", INK);
+    /* ★ヒンディー語も **0**（組み込みメッセージを使わない）—— 英語が出ると相手が
+       急に英語で返す。★★この席の相手は**まだ仮置き**で、doctor/hi.txt 自身が
+       「まだ相手がいない」と名乗る。訳（段 H3）が入ればファイルを差し替えるだけ。 */
+    const int len_hi = (int)(_binary_script_hi_txt_end - _binary_script_hi_txt_start);
+    if (!hg_eliza_init(HG_HI, _binary_script_hi_txt_start, len_hi, 0))
+        say("ヒンディー語のスクリプトが読めない。", INK);
 
     view_bottom();
     render_window();

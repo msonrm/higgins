@@ -22,6 +22,9 @@ SCRIPT="${SCRIPT:-../doctor/ja.txt}"
 #   訳でも移植でもないので、ここが「原典がそのまま動く」という主張の実物になる。
 SCRIPT_EN="${SCRIPT_EN:-../vendor/eliza/scripts/ELIZA-script-DOCTOR-original-1966-CACM-appendix.txt}"
 SCRIPT_KO="${SCRIPT_KO:-../doctor/ko.txt}"
+# ★ヒンディー語の相手は **まだ仮置き**（doctor/hi.txt の頭書き）—— 入力を実機で
+#   打つために席だけ先に立てている。訳（段 H3）が入ったらここを差し替えるだけ。
+SCRIPT_HI="${SCRIPT_HI:-../doctor/hi.txt}"
 
 # ---- 1. 語彙を焼く ----
 # ★**毎回焼く**。生成物を残すと、スクリプトを直したのに切れ方が変わらない、という
@@ -44,6 +47,7 @@ $PY gen_devanagari.py
 cp "$SCRIPT" script.txt
 cp "$SCRIPT_EN" script_en.txt
 cp "$SCRIPT_KO" script_ko.txt
+cp "$SCRIPT_HI" script_hi.txt
 ARCH=$(uname -m)
 case "$ARCH" in
     aarch64) OFMT="elf64-littleaarch64"; OBIN="aarch64" ;;
@@ -58,6 +62,7 @@ mkdir -p "$OBJ"
 objcopy -I binary -O "$OFMT" -B "$OBIN" script.txt "$OBJ/script_txt.o"
 objcopy -I binary -O "$OFMT" -B "$OBIN" script_en.txt "$OBJ/script_en_txt.o"
 objcopy -I binary -O "$OFMT" -B "$OBIN" script_ko.txt "$OBJ/script_ko_txt.o"
+objcopy -I binary -O "$OFMT" -B "$OBIN" script_hi.txt "$OBJ/script_hi_txt.o"
 
 # ---- 3. 焼く ----
 # ★**-DZM_BASE=30** = 行の高さ。デーヴァナーガリーは上下に母音記号が付くので、
@@ -109,7 +114,7 @@ $CXX $CXXFLAGS -c eliza_bridge.cpp -o "$OBJ/eliza_bridge.o"
 
 # shellcheck disable=SC2086
 $CXX -o "$OUT" $OBJS "$OBJ/eliza_bridge.o" "$OBJ/script_txt.o" "$OBJ/script_en_txt.o" \
-     "$OBJ/script_ko_txt.o" $LDFLAGS $LDCXX
+     "$OBJ/script_ko_txt.o" "$OBJ/script_hi_txt.o" $LDFLAGS $LDCXX
 
 # ---- 4. 検査用のホストビルド ----
 # ★**本体と同じ .o を使う**。別に焼き直すと「検査したもの」と「載っているもの」が

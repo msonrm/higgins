@@ -28,6 +28,14 @@ cd "$(dirname "$0")"
 [ -f higgins.otf ] || { echo "higgins.otf が無い（sh make_font.sh）" >&2; exit 1; }
 OUT="${TMPDIR:-/tmp}/hg-shots"
 mkdir -p "$OUT"
+# ★★**変換の学習を台本ごとにまっさらにする。** mozc の profile（既定 = native/conf）は
+#   走らせるたびに育つので、指さないと **conv / resize / shot の 3 本が
+#   「機械ごとに違う絵」**になる —— 実際 2026-09-03 に踏んだ: 別の作業ツリーで基準を
+#   撮ったら、コードは 1 行も違わないのにこの 3 本だけ赤くなった。
+# ★**1 回だけ消すのでは足りない。** 台本の間でも学習は持ち越されるので、
+#   **台本を 1 本足しただけで後ろの台本の絵が変わる**（並びはファイル名順）。
+#   だから**台本ごとに**消してから作る。
+PROF="$OUT/conf"
 ng=0
 for f in *.script; do
     stop=$(grep -o 'ZENMAI_STOP=[0-9]*' "$f" | head -1 | cut -d= -f2)
@@ -37,9 +45,11 @@ for f in *.script; do
         stop=$((last + 200))
     fi
     rm -f "$OUT/$f.raw"
+    rm -rf "$PROF"
+    mkdir -p "$PROF"
     SDL_VIDEODRIVER=offscreen ZENMAI_SCRIPT="$f" ZENMAI_STOP="$stop" \
         ZENMAI_RAW="$OUT/$f.raw" ZENMAI_FONT="$PWD/higgins.otf" \
-        ZENMAI_FONT_DEVA="$PWD/higgins-deva.ttf" \
+        ZENMAI_FONT_DEVA="$PWD/higgins-deva.ttf" HIGGINS_PROFILE="$PROF" \
         ./higgins > /dev/null 2>&1 || true
     if [ ! -s "$OUT/$f.raw" ]; then
         printf '%-22s ★絵が出なかった（stop=%s）\n' "$f" "$stop"

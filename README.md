@@ -5,11 +5,15 @@
 **1966 年の ELIZA を忠実に走らせ、4 言語を教え込み、キーボードの無い機械で打つ。**
 
 > **Three of the four run on a handheld with no keyboard: Japanese, English (the 1966
-> original) and Korean. Hindi still needs a font and shaping — and a script to talk to.**
+> original) and Korean. Hindi can now be *typed* — font, shaping and Devanagari input
+> are all in — but it has **no one to talk to yet**: the fourth seat holds a placeholder
+> that says so itself, until the DOCTOR script is translated.**
 >
 > **4 つのうち 3 つが動く** —— 日本語・英語（1966 年の原典）・韓国語が、キーボードの
-> 無いハンドヘルド（PortMaster）で打てる。**残るヒンディー語はフォントと shaping、
-> そして「話す相手」（DOCTOR スクリプト）が要る。**
+> 無いハンドヘルド（PortMaster）で打てる。**ヒンディー語は「打てる」ようになった**
+> （フォント・shaping・デーヴァナーガリー入力）が、★**話す相手（DOCTOR スクリプト）が
+> まだ無い** —— 4 つ目の席には仮置きが座っていて、**それ自体が「まだ相手がいない」と
+> 名乗る**。
 
 ## What it is / これは何か
 
