@@ -19,7 +19,11 @@ uint16_t ko_row_char(int row)
     return KO_ROW_CHAR[row >= 0 && row < 10 ? row : 0];
 }
 
-void ko_init(KoComposer *k) { k->onset = k->nucleus = k->coda = k->rollback_coda = -1; }
+void ko_init(KoComposer *k)
+{
+    k->onset = k->nucleus = k->coda = k->rollback_coda = -1;
+    k->rollback_pending = 0;
+}
 
 void ko_commit(KoComposer *k) { ko_init(k); }
 
@@ -36,6 +40,8 @@ static int syllable(KoComposer *k, int onset, int nucleus, uint16_t *out)
     k->onset = onset;
     k->nucleus = nucleus;
     k->coda = -1;
+    k->rollback_coda = -1;
+    k->rollback_pending = 0;
     *out = compose(onset, nucleus, -1);
     return 1;
 }
@@ -46,18 +52,25 @@ static int patchim(KoComposer *k, int coda, uint16_t *out, int *replace)
 {
     if (!ko_composing(k))
         return 0;
-    k->rollback_coda = k->coda;        /* ★付ける直前を覚えておく（巻き戻し用） */
+    const int before = k->coda;
     if (k->coda >= 0) {
         for (int i = 0; i < KO_DOUBLE_CODA_N; i++)
             if (KO_DOUBLE_CODA[i][0] == k->coda && KO_DOUBLE_CODA[i][1] == coda) {
                 k->coda = KO_DOUBLE_CODA[i][2];
+                k->rollback_coda = before;
+                k->rollback_pending = 1;
                 *out = compose(k->onset, k->nucleus, k->coda);
                 *replace = 1;
                 return 1;
             }
+        /* ★★成立しない組み合わせ（앉 に さらに ㅈ 等）。**戻せる状態を落とす** ——
+           ここで落とさないと、次に母音が来たときに**前の音節の받침まで戻して**しまう。 */
+        k->rollback_pending = 0;
         return 0;
     }
     k->coda = coda;
+    k->rollback_coda = before;
+    k->rollback_pending = 1;
     *out = compose(k->onset, k->nucleus, k->coda);
     *replace = 1;
     return 1;
@@ -79,10 +92,11 @@ int ko_apply(KoComposer *k, const GpAction *a, uint16_t *out, int *replace)
         return patchim(k, a->coda, out, replace);
     case GPA_KO_REVERT:
         /* ★母音が来た = 直前の받침は「新しい音節の頭」だった。
-           ★**겹받침は巻き戻さない**（rollback_coda が 0 以上 = 2 つ目を足していた）。 */
-        if (!ko_composing(k) || k->rollback_coda >= 0)
+           ★**겹받침も戻す**（戻し先は 1 つ目の받침）。korean.h の注記を参照。 */
+        if (!ko_composing(k) || !k->rollback_pending)
             return 0;
-        k->coda = -1;
+        k->coda = k->rollback_coda;
+        k->rollback_pending = 0;
         *out = compose(k->onset, k->nucleus, k->coda);
         *replace = 1;
         return 1;
