@@ -39,6 +39,7 @@ for f in *.script; do
     rm -f "$OUT/$f.raw"
     SDL_VIDEODRIVER=offscreen ZENMAI_SCRIPT="$f" ZENMAI_STOP="$stop" \
         ZENMAI_RAW="$OUT/$f.raw" ZENMAI_FONT="$PWD/higgins.otf" \
+        ZENMAI_FONT_DEVA="$PWD/higgins-deva.ttf" \
         ./higgins > /dev/null 2>&1 || true
     if [ ! -s "$OUT/$f.raw" ]; then
         printf '%-22s ★絵が出なかった（stop=%s）\n' "$f" "$stop"

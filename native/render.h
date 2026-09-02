@@ -7,12 +7,23 @@
 #include "glyph.h"         /* ★字の 5 本（幅と描画）はここ */
 #include "content.h"
 
+/* ★**行の高さ（器）は `glyph.h` の `ZM_BASE`。** ★字の側（`glyph_ft.c` の `BOX24`）と
+ *   ここが**同じ数を見ていなければならない** —— 器を広げても字の側が 24 のままだと、
+ *   `fit_px` が古い器で大きさを決め、**広げた意味が無いまま px だけ落ちる**
+ *   （2026-09-02 に踏んだ。器 30 にしたのに本文が 19px になった）。
+ *
+ * ★**下の 3 つは導出にしてある。** もとは 24 を前提に手で計算した数
+ *   （BODY_H = 400 / CMD_Y = 432 / WIN_H = 448）が並んでいて、器を変えると
+ *   ★**どれか 1 つを直し忘れて、本文とコマンド欄が重なる**。ZM_BASE = 24 では
+ *   もとの値と一致する（400 / 432 / 448）。 */
 enum {
     MARGIN = 32, TEXT_W = W - 2 * MARGIN,
-    TOP = 24, BODY_H = 400,            /* 本文窓 y=24..424 */
-    CMD_Y = 432, CMD_H = 24,           /* コマンド欄(下セーフ 24px) */
-    RUBY_ZONE = 14, BASE = 24, LEAD = 8, BLANK = 24,
-    WIN_H = 448,                       /* 表示窓の描画バンド(本文窓 + 余白) */
+    TOP = 24,
+    RUBY_ZONE = 14, BASE = ZM_BASE, LEAD = 8, BLANK = ZM_BASE,
+    CMD_H = ZM_BASE,                   /* コマンド欄は 1 行 */
+    CMD_Y = H - 24 - CMD_H,            /* コマンド欄(下セーフ 24px) */
+    BODY_H = CMD_Y - 8 - TOP,          /* 本文窓(欄との隙間 8px) */
+    WIN_H = BODY_H + 48,               /* 表示窓の描画バンド(本文窓 + 余白) */
     SCROLL_STEP = 19,
     WAIT_TYPE = 75, WAIT_READ = 150,
 };

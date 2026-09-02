@@ -47,3 +47,7 @@ native/test_conv
 native/higgins.otf
 portmaster/higgins/
 portmaster/higgins.zip
+
+# ★同梱フォントの実体は追跡しない（make_font.sh が焼く / 取ってくる）
+native/higgins.otf
+native/higgins-deva.ttf

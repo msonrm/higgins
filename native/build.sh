@@ -57,11 +57,15 @@ objcopy -I binary -O "$OFMT" -B "$OBIN" script_en.txt "$OBJ/script_en_txt.o"
 objcopy -I binary -O "$OFMT" -B "$OBIN" script_ko.txt "$OBJ/script_ko_txt.o"
 
 # ---- 3. 焼く ----
-CFLAGS="${CFLAGS:--O2 -Wall} -DZM_SDL -I. $(pkg-config --cflags sdl2 freetype2)"
+# ★**-DZM_BASE=30** = 行の高さ。デーヴァナーガリーは上下に母音記号が付くので、
+#   22px でも ink が 29 行あり 24 行の器に入らない（実測）。器 30 なら全席 23px。
+# ★**-DZM_HARFBUZZ** = 整形を入れる。これが無いと `shape_run` は 1 対 1 のまま
+#   （日本語・韓国語・英語はそれで正しい）。
+CFLAGS="${CFLAGS:--O2 -Wall} -DZM_SDL -DZM_BASE=30 -DZM_HARFBUZZ -I. $(pkg-config --cflags sdl2 freetype2 harfbuzz)"
 # ★-w（警告抑制）は vendor の eliza.cpp だから。upstream を書き換えない方針なので、
 #   -Wall を付けても直せない警告で出力が埋まるだけになる（Makefile と同じ判断）。
 CXXFLAGS="${CXXFLAGS:--std=c++20 -O1 -w} -I."
-LDFLAGS="$(pkg-config --libs sdl2 freetype2)"
+LDFLAGS="$(pkg-config --libs sdl2 freetype2 harfbuzz)"
 # ★libstdc++ は静的に。配布先（PortMaster の各 CFW）に C++ ランタイムがあるとは
 #   限らず、あっても版が古いことがある。glibc 自体は動的のまま（build-port.sh の注記）。
 LDCXX="-static-libstdc++"

@@ -53,6 +53,14 @@ cp "../native/vendor/hechima/mozc.data"           "$GAME/mozc.data"
 }
 cp ../native/higgins.otf "$GAME/higgins.otf"
 
+# ★2 本目（デーヴァナーガリー・244KB）。★**1 本にまとめられない** —— Noto Sans CJK は
+#   CFF、Noto Sans Devanagari は glyf で、1 つのフォントに両方の outline 形式は入らない。
+[ -f ../native/higgins-deva.ttf ] || {
+    echo "デーヴァナーガリーのフォントが無い: cd native && sh make_font.sh" >&2
+    exit 1
+}
+cp ../native/higgins-deva.ttf "$GAME/higgins-deva.ttf"
+
 # 4. ライセンス（★同梱物の出自を配布物の中に持たせる。README から辿れるだけでは足りない）
 cp ../LICENSE                                   "$GAME/licenses/higgins-MIT.txt"
 cp ../vendor/eliza/LICENSE                      "$GAME/licenses/eliza-CC0.txt"
@@ -60,6 +68,9 @@ cp "$HOME/development/zenmai/LICENSE"           "$GAME/licenses/zenmai-shell-MIT
 cp "$HOME/development/fcitx5-mozc/mozc/LICENSE" "$GAME/licenses/mozc-BSD.txt"
 cp "$HOME/development/fcitx5-mozc/LICENSE"      "$GAME/licenses/fcitx5-mozc-BSD.txt"
 cp "$HOME/development/zenmai/native/vendor/noto-cjk/LICENSE" "$GAME/licenses/noto-cjk-OFL.txt"
+# ★Noto Sans Devanagari も OFL だが、**著作権表記が CJK と違う**（Adobe /
+#   The Noto Project Authors）ので別ファイルで入れる。
+cp ../vendor/noto-devanagari/LICENSE            "$GAME/licenses/noto-devanagari-OFL.txt"
 cp ../vendor/VENDOR.md                          "$GAME/licenses/VENDOR.md"
 
 # 5. スクリーンショット（gameinfo.xml が higgins/ の中を指しているので複製する）
