@@ -7,7 +7,7 @@ CXXFLAGS ?= -std=c++20 -O1 -w
 BUILD     := build
 ELIZA_SRC := vendor/eliza/src/eliza.cpp
 
-.PHONY: all test test-ja test-ja-doctor test-ja-alias test-web test-api test-native clean
+.PHONY: all test test-ja test-ja-doctor test-ja-alias test-ko-doctor test-ko-coverage test-web test-api test-native clean
 
 all: $(BUILD)/eliza
 
@@ -20,7 +20,7 @@ $(BUILD)/eliza: $(ELIZA_SRC)
 #   そこで 2 つ焼いて、両方の結果が揃ってはじめて緑とする:
 #     eliza-count  … 本番と同じロジック + 件数表示   → 「1 件以上あって 0 失敗」
 #     eliza-canary … それにわざと落ちるテストを 1 個 → 「1 失敗」（検査が生きている証拠）
-test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-web test-api test-native
+test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-ko-doctor test-ko-coverage test-web test-api test-native
 	@printf '\n' | $(BUILD)/eliza-count | grep -qE '[1-9][0-9]* assertions' \
 	  || { echo 'FAIL: テストが 1 件も走っていない'; exit 1; }
 	@printf '\n' | $(BUILD)/eliza-count | grep -q '0 failures' \
@@ -84,6 +84,26 @@ test-ja-alias: $(BUILD)/eliza
 	           exit 1; }; \
 	fi
 	@echo 'OK: 別名ゴールデン一致（組み込みの英語メッセージも出ていない）'
+
+# ★韓国語 DOCTOR のゴールデン。josa（조사・어미 を剥がす）→ eliza → tsunagi_ko（繋ぐ）。
+#   ★日本語と道具が違うのは、**韓国語には既に띄어쓰기がある**から ——
+#   分かち書きではなく「語にくっついた 조사・어미 を剥がす」だけでよい。
+test-ko-doctor: $(BUILD)/eliza
+	@python3 tools/josa.py doctor/ko.txt < experiments/ko_doctor.in \
+	  | $(BUILD)/eliza --nobanner doctor/ko.txt \
+	  | python3 tools/tsunagi_ko.py \
+	  | diff -u experiments/ko_doctor.out - > /dev/null \
+	  || { echo 'FAIL: 韓国語 DOCTOR のゴールデンが一致しない'; exit 1; }
+	@echo 'OK: 韓国語 DOCTOR ゴールデン一致'
+
+# ★★別名の穴を**機械で**探す（日本語で 13 件出た形）。
+#   台本ではなく**スクリプトからキーワードを取り出して全件叩く**ので、
+#   規則を増やしても検査が置いていかれない。
+#   ★判定は「応答にラテン文字が出たら失敗」—— スクリプトは 100% 韓国語なので、
+#     英字が出るのはエンジンの組み込みメッセージが漏れたときだけ。
+#   ★実際に 8 件（제가 / 내가 の 4 形ずつ）を初回で掘り当てた。
+test-ko-coverage: $(BUILD)/eliza
+	@python3 tools/coverage_ko.py doctor/ko.txt
 
 # ★web/ の JS 3 本を Node で動かし、C++ 版と同じ応答が出るかを見る。
 #   ブラウザを開かずに Web 版の回帰を守るため。★独立した 2 実装が一致することは
