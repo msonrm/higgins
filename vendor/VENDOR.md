@@ -93,26 +93,35 @@ Web 版で日本語を打つための一式。**自作部分 MIT / 変換エン�
   ★**きつい方が共有コードを持たないと、ゆるい方（Linux）で malloc を気軽に使う・
   float を使う・文字コードを u32 にする、が黙って通ってしまう。**
 
-取り込み: **2026-08-31** / 上流の版 = `dac2483`（Merge pull request #37 from msonrm/docs/release-procedure）
+取り込み: **2026-09-02** / 上流の版 = `ee9edae`（Merge pull request #38 from msonrm/feat/shape-run ―― 字の境界に整形を足す）
 
 | ファイル | 行 | md5 |
 |---|---|---|
 | `plat.h` | 54 | `2cd7b40f18bbbd9a0a9677c51a179da3` |
 | `plat_sdl.c` | 416 | `bb3a88cea38bea54512a2bf051fc8ff1` |
-| `glyph.h` | 44 | `68a51b1474546a5b2fb59a212eac104b` |
-| `glyph_ft.c` | 325 | `9b6d37cdd872943c909e4ff995b03bd2` |
-| `render.c` | 587 | `3fee80fdc143b482c0cd113f10670544` |
+| `glyph.h` | 80 | `7a1dd3426dc72d1bb3add9da745d62ca` |
+| `glyph_ft.c` | 353 | `f20171b537f1e1ef005f51617f8e06c2` |
+| `render.c` | 636 | `dbd710e29f0fb93f78d4b7984ac2d6a2` |
 | `render.h` | 68 | `e2d8f2a44ab99396b5e185556bbe356f` |
-| `input.c` | 265 | `89d274c52b74fd6b3d675910cfad74f0` |
-| `input.h` | 58 | `50a52faa74060f9d16c7e3be4909cdce` |
-| `tables.h` | 104 | `27832972b1202422b273f02eb3aa5013` |
 | `card.h` | 14 | `7a05b47530c3eec9a5c86d185c33b051` |
 | `save_file.c` | 72 | `6f99dbca6385eb3c09ace1ecbf3a8473` |
 | `test_glyph.c` | 201 | `a039ec0e701ab7897ee6f49ccae6b7f1` |
 
-★`tables.h` は**取り込みリストに無かったのを足した**（`input.c:3` が include している
-かな表 10×5 と T9 表）。生成物の側を pin する —— labo から生成し直す道を持つと、
-Higgins と Zenmai で表がずれても誰も気づけない。
+★2026-09-02 の取り込みで増えたのは**字の境界の整形**（`shape_run` / `draw24_gid`）——
+デーヴァナーガリーは字の並びと画の並びが 1 対 1 でないので、`draw24(code)` を
+どう並べても正しい絵にならない。★**PS1 は無傷**（焼いた版は永久に 1 対 1）。
+詳しくは `native/glyph.h` の頭書きと、Zenmai の `docs/ps1-implementation-notes.md`。
+
+### ★取り込みリストから外れたもの（2026-09-02）
+
+理由はファイルごとに違う。**どちらも「黙って」事故になる形だった**:
+
+| ファイル | なぜ外れたか |
+|---|---|
+| `input.c` / `input.h` | ★★**Higgins が別の言語の入力を足したので割れた**（実測 **174 行** / **49 行**）—— 韓国語の合成（`step_korean` / `korAllReleased`）・英語の行インジケータ（`gp_row_chars_en`）・シフトの巡回。★Zork に韓国語入力は要らないので**上流へ返す筋でもない**。★**放っておくと危なかった** —— vendoring は上書きなので、`vendor_shell.sh` を流すだけで**韓国語入力が黙って消える**。「手でコピーしない」という下の作法が、そのまま事故の引き金になっていた |
+| `tables.h` | ★**もともとリストに無かった**のに、**この表にだけ載っていた**（逆向きの不整合）。`vendor_shell.sh` は「Zenmai が Zork 用に歪めた表（や行の「」を潰し、わ行を組み替え、ゔ を落とす）は取らない」と明記していて、Higgins は `native/gen_tables.py` で**同じ正典から自分で焼く**。★表が「取り込んでいないもの」を取り込んだことにしていた |
+
+★**Zenmai 側の `input.c` に直したいことが出たら、差分を見て手で運ぶこと。**
 
 ★`save_file.c` / `card.h` / `test_glyph.c` は**まだリンクしていない**
 （セーブは段階 E で決める。フォントの被覆検査は同梱フォントを作るときに使う）。

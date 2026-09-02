@@ -36,6 +36,17 @@ DST="$(cd "$(dirname "$0")/.." && pwd)/native"
 #   「PS1 適応」）。Higgins は自由文を打つのでどれも要らない。
 #   ★**同じ正典から自分で焼く**（native/gen_tables.py）。
 #   「上流の生成物」と「上流が加工した生成物」は違う ―― 実機で発覚（2026-08-31）。
+#
+# ★★**`input.c` / `input.h` は 2026-09-02 に割れた**（取り込みリストから外した）。
+#   ★割れた理由は「PS1 が払えない」ではなく、**Higgins が別の言語の入力を足した**から ——
+#   韓国語の合成（`step_korean` / `korAllReleased`）・英語の行インジケータ
+#   （`gp_row_chars_en`）・シフトの巡回で、実測 **174 行ぶん**離れている
+#   （`input.h` も 49 行）。★**Zork に韓国語入力は要らない**ので、上流へ返す筋のものでもない。
+#
+#   ★**放っておくと危なかった** —— vendoring は上書きなので、このスクリプトを
+#   流すだけで**Higgins の韓国語入力が黙って消える**。「手でコピーしない」という
+#   VENDOR.md の作法が、そのまま事故の引き金になっていた。
+#   Zenmai 側の `input.c` に直したいことが出たら、**差分を見て手で運ぶ**こと。
 FILES=(
   plat.h
   plat_sdl.c
@@ -43,8 +54,6 @@ FILES=(
   glyph_ft.c
   render.c
   render.h
-  input.c
-  input.h
   card.h
   save_file.c
   test_glyph.c
