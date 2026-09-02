@@ -16,8 +16,13 @@
 
 #include "input.h"
 
-/* 合成中の音節。-1 = 無し（TS の null）。 */
-typedef struct { int onset, nucleus, coda; } KoComposer;
+/* 合成中の音節。-1 = 無し（TS の null）。
+   ★`rollback_coda` = 받침を付ける**直前**の종성。母音が来たときに巻き戻せるかの判断に使う
+     —— **-1（もともと받침が無かった）ときだけ巻き戻す**。
+     0 以上なら**겹받침を作った**ということなので、分解してはいけない
+     （겹받침は 2 回の明示的な받침入力で作るもので、新しい音節の onset が別に
+     来ている以上、崩す理由が無い。GIME の注記）。 */
+typedef struct { int onset, nucleus, coda, rollback_coda; } KoComposer;
 
 void ko_init(KoComposer *k);
 void ko_commit(KoComposer *k);                 /* 確定 = 状態を捨てる */

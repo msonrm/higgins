@@ -236,6 +236,25 @@ static int step_korean(GpMachine *s, const GpFrame *f, GpAction out[4])
     const int dpad = f->consonantCount > 0;
     const int prevDpad = s->prevConsonantCount > 0;
 
+    /* ★★母音が来たら直前の받침を取り消す（GIME の「받침巻き戻し」）。
+       子音（LB / D-pad）が母音より先に着くと**いったん받침として適用される**ので、
+       母音の到着で「あれは新しい音節の頭だった」と分かる ——
+       実機の指摘（2026-09-02）: 「마」のあとに ㅁ の行 + 母音を打つと
+       **맘마** になっていた（正しくは 마마）。
+       ★★**web の stepKorean にはこの処理が無い**（`revertCoda` は
+         korean-composer.ts に**定義だけあって一度も呼ばれていない**）。
+         GIME の Swift / Kotlin にしかなかった —— 移植元を web にしたので落ちていた。
+       ★겹받침のときは巻き戻さない、という判断は korean.c が持つ（あちらが
+         直前の받침を覚えている）。ここは「母音が来た」ことだけを伝える。 */
+    if (f->vowelNow && s->korPatchimRollback) {
+        if (n < 4) {
+            out[n].type = GPA_KO_REVERT;
+            out[n].replace = 1;
+            n++;
+        }
+        s->korPatchimRollback = 0;
+    }
+
     if (f->vowelNow) {
         const int onset = KO_ONSET_FOR_ROW[f->row >= 0 && f->row < 10 ? f->row : 0];
         const int nucleus = f->rtNow ? KO_NUCLEUS_SHIFTED[v] : KO_NUCLEUS_BASE[v];
@@ -298,6 +317,7 @@ static int step_korean(GpMachine *s, const GpFrame *f, GpAction out[4])
         out[n].type = GPA_KO_PATCHIM;
         out[n].coda = KO_CODA_FOR_ROW[0];
         n++;
+        s->korPatchimRollback = 1;     /* ★こちらも巻き戻せる（GIME と同じ） */
         s->korAllReleased = 0;
     }
 

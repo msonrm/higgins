@@ -79,12 +79,37 @@ static const Step S_REDO[] = {
     REL(200),
 };
 
+/* ★実機の指摘（2026-09-02）: 「마」のあとに ㅁ の行 + 母音を打つと 맘마 になっていた。
+   子音が母音より先に着くと**いったん받침として適用される**ので、母音の到着で
+   巻き戻さなければならない。正しくは 마마。 */
+static const Step S_MAMA[] = {
+    { 0,   5, 3, 1, 0, 0, 1 },     /* L1 + 右面 = ㅁ + ㅏ → 마 */
+    REL(50),
+    { 100, 5, -1, 0, 0, 0, 1 },    /* L1 だけ先に着く → いったん받침 ㅁ（맘） */
+    { 130, 5, 3, 1, 0, 0, 1 },     /* 母音が来た → 巻き戻して新しい音節 */
+    REL(180),
+};
+
+/* ★겹받침は巻き戻さない —— 2 回の明示的な받침入力で作ったものなので、
+   新しい音節の onset が別に来ている以上、崩す理由が無い（GIME の注記）。 */
+static const Step S_ANJJA[] = {
+    { 0,   0, 3, 1, 0, 0, 0 },     /* 아 */
+    REL(50),
+    { 100, 2, -1, 0, 0, 0, 1 },    /* 받침 ㄴ → 안 */
+    REL(150),
+    { 200, 8, -1, 0, 0, 0, 2 },    /* L1+→ = ㅈ → 겹받침 ㄵ → 앉 */
+    { 230, 8, 3, 1, 0, 0, 2 },     /* 母音が来ても**巻き戻さない** → 앉 + 자 */
+    REL(280),
+};
+
 static const Scene SCENES[] = {
     { "안녕",             S_ANNYEONG, (int)(sizeof S_ANNYEONG / sizeof *S_ANNYEONG) },
     { "한국",             S_HANGUK,   (int)(sizeof S_HANGUK / sizeof *S_HANGUK) },
     { "겹받침 앉",        S_ANJ,      (int)(sizeof S_ANJ / sizeof *S_ANJ) },
     { "ㅣ付加 애",        S_AE,       (int)(sizeof S_AE / sizeof *S_AE) },
     { "받침の付け直し",   S_REDO,     (int)(sizeof S_REDO / sizeof *S_REDO) },
+    { "巻き戻し 마마",    S_MAMA,     (int)(sizeof S_MAMA / sizeof *S_MAMA) },
+    { "겹받침は残す 앉자", S_ANJJA,   (int)(sizeof S_ANJJA / sizeof *S_ANJJA) },
 };
 
 static void show(const char *label, const uint16_t *buf, int n)

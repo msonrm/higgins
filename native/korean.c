@@ -19,7 +19,7 @@ uint16_t ko_row_char(int row)
     return KO_ROW_CHAR[row >= 0 && row < 10 ? row : 0];
 }
 
-void ko_init(KoComposer *k) { k->onset = k->nucleus = k->coda = -1; }
+void ko_init(KoComposer *k) { k->onset = k->nucleus = k->coda = k->rollback_coda = -1; }
 
 void ko_commit(KoComposer *k) { ko_init(k); }
 
@@ -46,6 +46,7 @@ static int patchim(KoComposer *k, int coda, uint16_t *out, int *replace)
 {
     if (!ko_composing(k))
         return 0;
+    k->rollback_coda = k->coda;        /* ★付ける直前を覚えておく（巻き戻し用） */
     if (k->coda >= 0) {
         for (int i = 0; i < KO_DOUBLE_CODA_N; i++)
             if (KO_DOUBLE_CODA[i][0] == k->coda && KO_DOUBLE_CODA[i][1] == coda) {
@@ -70,10 +71,21 @@ int ko_apply(KoComposer *k, const GpAction *a, uint16_t *out, int *replace)
         return syllable(k, a->onset, a->nucleus, out);
     case GPA_KO_PATCHIM:
         /* ★row を変えたときは、いま付いている받침を**戻してから**付け直す
-           （stepKorean が revert を立てて知らせる）。差し替えは 1 字のまま。 */
+           （stepKorean が revert を立てて知らせる）。差し替えは 1 字のまま。
+           ★戻す先は -1 ではなく `rollback_coda` —— 겹받침を作っていた場合、
+             1 つ目の받침まで消してしまうと元に戻せない。 */
         if (a->revert)
-            k->coda = -1;
+            k->coda = k->rollback_coda;
         return patchim(k, a->coda, out, replace);
+    case GPA_KO_REVERT:
+        /* ★母音が来た = 直前の받침は「新しい音節の頭」だった。
+           ★**겹받침は巻き戻さない**（rollback_coda が 0 以上 = 2 つ目を足していた）。 */
+        if (!ko_composing(k) || k->rollback_coda >= 0)
+            return 0;
+        k->coda = -1;
+        *out = compose(k->onset, k->nucleus, k->coda);
+        *replace = 1;
+        return 1;
     case GPA_KO_ADD_I: {
         if (!ko_composing(k))
             return 0;
