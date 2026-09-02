@@ -4,7 +4,12 @@
 
 **1966 年の ELIZA を忠実に走らせ、4 言語を教え込み、キーボードの無い機械で打つ。**
 
-> ★**Nothing works yet — this is the skeleton.** / **まだ何も動いていない。骨組みだけ。**
+> **Three of the four run on a handheld with no keyboard: Japanese, English (the 1966
+> original) and Korean. Hindi still needs a font and shaping — and a script to talk to.**
+>
+> **4 つのうち 3 つが動く** —— 日本語・英語（1966 年の原典）・韓国語が、キーボードの
+> 無いハンドヘルド（PortMaster）で打てる。**残るヒンディー語はフォントと shaping、
+> そして「話す相手」（DOCTOR スクリプト）が要る。**
 
 ## What it is / これは何か
 

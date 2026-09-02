@@ -65,6 +65,13 @@ static void paint_screen(uint16_t color)
 enum { SEAT_JA = 0, SEAT_EN = 1, SEAT_KO = 2, SEAT_N = 3 };
 static int seat;
 
+/* 右スティック↓ の連打（句読点の巡回）。★**file scope にあるのは、
+   「他の入力が来たら巡回を切る」を comp_insert / comp_bs / caret_set の中で
+   やるため** —— 呼ぶ場所を数え上げる形にすると、いつか 1 つ忘れる。 */
+static int punct_n, punct_at;
+
+static void punct_break(void) { punct_n = 0; punct_at = 0; }
+
 static int seat_slot(void)
 {
     return seat == SEAT_EN ? HG_EN : seat == SEAT_KO ? HG_KO : HG_JA;
@@ -133,6 +140,12 @@ static void comp_insert(const uint16_t *t, int tn, int replace)
     caret += tn;
     if (seat != SEAT_JA)
         fixed = caret;                 /* ★英語と韓国語は変換が無いので即確定（上の注記）*/
+    /* ★★何かを入れたら句読点の巡回は切れる。**窓は押すたびに延びる**ので、
+       切らないと「空白 → 字を打つ → もう一度 ↓」で 2 段目が発火し、
+       **いま打った字を食う**（`rep = 1`）。実機の指摘（2026-09-02）——
+       韓国語は 5 段なので、そのまま連打すると `'` まで走ってしまう。
+       ★GIME も labo web も同じ作り（時間の窓だけ）なので、これは**上流へ返す**話。 */
+    punct_break();
 }
 
 static void comp_bs(void)
@@ -145,6 +158,7 @@ static void comp_bs(void)
     caret--;
     if (fixed > caret)
         fixed = caret;
+    punct_break();
 }
 
 /* 未確定（`comp[fixed..caret)`）だけを捨てる。
@@ -176,6 +190,7 @@ static void caret_set(int pos)
     caret = pos;
     fixed = pos;
     ko_commit(&ko);       /* ★動かしたら合成も切る（前の音節に받침が付くのを防ぐ） */
+    punct_break();
 }
 
 /* ---- 入力欄（複数行）----
@@ -814,7 +829,6 @@ static void interactive(void)
     int ls_prev[4] = { 0, 0, 0, 0 };   /* ← → ↑ ↓ の前フレーム */
     int ls_at[4] = { 0, 0, 0, 0 };     /* 次にリピートする時刻（fields） */
     int prev_conv = 0;                 /* 前の回に変換中だったか（候補窓を消すため） */
-    int punct_n = 0, punct_at = 0;     /* 右スティック↓ の連打（句読点トグル） */
     int prev_row = -1;
     uint16_t prev_mark = 0;
 
@@ -933,8 +947,7 @@ static void interactive(void)
             if (conv_active())
                 conv_accept();
             const int within = punct_at && fields < punct_at;
-            punct_n = within ? punct_n + 1 : 1;
-            punct_at = fields + PUNCT_WINDOW;
+            const int step_n = within ? punct_n + 1 : 1;
             /* ★英語は **空白 → . → ,**（GIME の英語モードと同じ順）。日本語は 、→。→ 全角空白。
                ★英語で最初に来るのが空白なのは、語の切れ目が一番よく要るから ——
                  ELIZA は空白で語を切るので、**空白が打てないと 1 語しか送れない**。 */
@@ -951,22 +964,24 @@ static void interactive(void)
             const uint16_t *tbl = seat == SEAT_EN ? PUNCT_EN
                                 : seat == SEAT_KO ? PUNCT_KO : PUNCT_JA;
             const int steps = seat == SEAT_KO ? 5 : 3;
-            int idx = punct_n - 1;
+            int idx = step_n - 1;
             if (idx >= steps)
                 idx = steps - 1;
             const uint16_t ch = tbl[idx];
-            const int rep = punct_n > 1 ? 1 : 0;
-            if (punct_n >= steps) {
-                punct_n = 0;
-                punct_at = 0;
-            }
+            const int rep = step_n > 1 ? 1 : 0;
             /* ★空白や記号が来たら SmartCaps を解く（step_english が表の字に対して
                やっているのと同じこと。こちらは表を通らない字なので手で解く）。
                ★**CapsLock は落とさない** —— 明示して掛けた固定は明示した操作で解く。 */
             if (seat == SEAT_EN)
                 gm.engSmartCaps = 0;
             ko_commit(&ko);            /* ★記号が来たら音節はそこで終わり */
-            comp_insert(&ch, 1, rep);
+            comp_insert(&ch, 1, rep);  /* ★ここで punct_break される */
+            /* ★**入れたあとに覚え直す。** こうしておくと「巡回が続くのは、
+               直前に入れたのがこの記号だったときだけ」が構造として保証される。 */
+            if (step_n < steps) {
+                punct_n = step_n;
+                punct_at = fields + PUNCT_WINDOW;
+            }
             dirty = 1;
         }
 
@@ -1005,8 +1020,7 @@ static void interactive(void)
                 gm.korAllReleased = 1;
                 gm.korPatchimRollback = 0;
                 ko_commit(&ko);
-                punct_n = 0;
-                punct_at = 0;
+                punct_break();
                 hist_blank();
                 say(hg_eliza_greeting(seat_slot()), INK);
                 scroll_new();
@@ -1055,6 +1069,8 @@ static void interactive(void)
             caret = 0;
             fixed = 0;
             gm.eagerSet = 0;
+            ko_commit(&ko);
+            punct_break();             /* ★送ったら巡回も切る（欄が空になったので） */
             dirty = 1;
             send(typed, typed_n);
         }

@@ -16,8 +16,18 @@
 
 #include "input.h"
 
-/* 合成中の音節。-1 = 無し（TS の null）。 */
-typedef struct { int onset, nucleus, coda; } KoComposer;
+/* 合成中の音節。-1 = 無し（TS の null）。
+   ★`rollback_coda` / `rollback_pending` = 直前に付けた받침を**戻せるか**と、その戻し先。
+     ★★**겹받침も戻す。** GIME は「겹받침は 2 回の明示的な받침入力で作るものだから
+       分解しない」として除外していたが、**それが「우울해요」→「우욿해요」の原因**
+       だった（実機・2026-09-02）—— 「울」のあとに ㅎ の行が母音より先に着くと
+       겹받침 ㅀ が出来てしまい、母音が来ても解けない。
+     ★戻していい理由: **巻き戻せる状態は「子音を押したまま」の間しか続かない**
+       （離すと machine 側の pending が落ちる）。つまり巻き戻しが起きるのは
+       **その子音が次の音節の頭だった**ときだけで、意図した겹받침は必ず一度離す。
+     ★`rollback_pending` は**成功した받침のあとだけ**立てる —— 失敗した받침
+       （겹받침にならない組み合わせ）のあとに戻すと、**前の音節の받침まで消える**。 */
+typedef struct { int onset, nucleus, coda, rollback_coda, rollback_pending; } KoComposer;
 
 void ko_init(KoComposer *k);
 void ko_commit(KoComposer *k);                 /* 確定 = 状態を捨てる */

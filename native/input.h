@@ -50,7 +50,8 @@ enum { GP_JA = 0, GP_EN = 1, GP_KO = 2 };
 
 /* 韓国語の 3 つは**字ではなく指示**（合成は korean.c が持つ）——
    同じ音節でも「新しく置く / 받침を足す / 母音を替える」で意味が違うため。 */
-enum { GPA_KANA, GPA_YOUON, GPA_KO_SYLLABLE, GPA_KO_PATCHIM, GPA_KO_ADD_I };
+enum { GPA_KANA, GPA_YOUON, GPA_KO_SYLLABLE, GPA_KO_PATCHIM, GPA_KO_ADD_I,
+       GPA_KO_REVERT };
 
 typedef struct {
     int type;
