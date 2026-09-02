@@ -626,12 +626,12 @@ static int pad_vowel(int p)
          : (p & BTN_CIR) ? 3 : (p & BTN_X) ? 4 : -1;
 }
 
-static GpFrame frame_of(int p, int ms)
+static GpFrameKana frame_of(int p, int ms)
 {
     const int cc = !!(p & BTN_LEFT) + !!(p & BTN_UP) + !!(p & BTN_RIGHT)
                  + !!(p & BTN_DOWN) + !!(p & BTN_L1);
     const int vowel = pad_vowel(p);
-    GpFrame f = { ms, pad_row(p), vowel, vowel >= 0,
+    GpFrameKana f = { ms, pad_row(p), vowel, vowel >= 0,
                   !!(p & BTN_L2), !!(p & BTN_R2), cc };
     return f;
 }
@@ -644,8 +644,8 @@ static void carry_over_pad(void)
     pad_prev = pad_read();
     if (pad_prev < 0)
         pad_prev = 0;
-    GpFrame f = frame_of(pad_prev, 0);
-    gp_sync_prev(&gm, &f);
+    GpFrameKana f = frame_of(pad_prev, 0);
+    gp_sync_prev_kana(&gm, &f);
 }
 
 /* 変換を確定して、打っている字（comp[]）へ移す。
@@ -899,10 +899,10 @@ static void interactive(void)
         pad_prev = p;
 
         /* かな（同時押し）*/
-        GpFrame f = frame_of(p, fields * 17);
+        GpFrameKana f = frame_of(p, fields * 17);
         const int row = f.row;
         GpAction a[4];
-        const int an = gp_step(&gm, seat_lang(), &f, a);
+        const int an = gp_step_kana(&gm, seat_lang(), &f, a);
         for (int i = 0; i < an; i++) {
             /* ★変換中に打ち始めたら、その時点の選択で確定してから入れる
                （実機の指摘・2026-08-31）。IME の作法。 */
@@ -924,7 +924,7 @@ static void interactive(void)
             }
             dirty = 1;
         }
-        gp_sync_prev(&gm, &f);
+        gp_sync_prev_kana(&gm, &f);
 
         /* 右スティックのフリック（1=← 2=↑ 3=→ 4=↓） */
         const int rs = pad_rstick_flick(axes);

@@ -152,10 +152,10 @@ int main(void)
         printf("--- %s ---\n", SCENES[i].name);
         for (int t = 0; t < SCENES[i].n; t++) {
             const Step *st = &SCENES[i].steps[t];
-            GpFrame f = { st->now, st->row, st->vowel, st->vowelNow,
+            GpFrameKana f = { st->now, st->row, st->vowel, st->vowelNow,
                           st->lt, st->rt, st->cc };
             GpAction a[4];
-            const int an = gp_step(&gm, GP_KO, &f, a);
+            const int an = gp_step_kana(&gm, GP_KO, &f, a);
             for (int k = 0; k < an; k++) {
                 uint16_t ch;
                 int rep = 0;
@@ -167,7 +167,7 @@ int main(void)
                 if (len < (int)(sizeof buf / sizeof *buf))
                     buf[len++] = ch;
             }
-            gp_sync_prev(&gm, &f);
+            gp_sync_prev_kana(&gm, &f);
         }
         show("  ", buf, len);
     }
@@ -299,6 +299,141 @@ int main(void)
         EMIT(deva_toggle_anusvara(&d));           /* → ँ */
         show("  हूँ（です・1 人称）→ ", buf, len);
         #undef EMIT
+    }
+
+    /* ---- デーヴァナーガリーの入力（LS の latch × D-pad）----
+     *
+     * ★合成器だけでなく**押した順**を見る。韓国語で実機 1 巡に出た 3 件は全部
+     *   ここ（合成ではなく入力）だった。
+     */
+    {
+        /* 1 フレーム。lsDir: 0=中立 1=↑ 2=→ 3=↓ 4=← / dpad: 0..3 / -1 */
+        typedef struct { int ls, dpad, lb, vowel, lt, rt, l3, rsUp, rsRight; } DStep;
+        DevaMachine dm;
+        Deva d;
+        uint16_t buf[16];
+        int len;
+
+        #define RUN(name, steps) do { \
+            deva_machine_init(&dm); deva_init(&d); len = 0; \
+            for (unsigned q = 0; q < sizeof (steps) / sizeof *(steps); q++) { \
+                const DStep *x = &(steps)[q]; \
+                GpFrameDeva fr = { q * 20, x->ls, x->dpad, x->lb, x->vowel, \
+                                   x->lt, x->rt, x->l3, x->rsUp, x->rsRight }; \
+                GpAction a[4]; \
+                const int an = gp_step_deva(&dm, &fr, a); \
+                for (int k = 0; k < an; k++) { \
+                    DevaOut o; \
+                    switch (a[k].deva_op) { \
+                    case DEVA_OP_CONSONANT: o = deva_consonant(&d, a[k].deva_ch); break; \
+                    case DEVA_OP_VOWEL: \
+                        o = deva_matra(&d, a[k].deva_ch); \
+                        if (!o.ok) o = deva_vowel(&d, a[k].deva_alt); \
+                        break; \
+                    case DEVA_OP_HALANT:   o = deva_halant(&d); break; \
+                    case DEVA_OP_NUKTA:    o = deva_nukta(&d); break; \
+                    case DEVA_OP_ANUSVARA: o = deva_toggle_anusvara(&d); break; \
+                    case DEVA_OP_VISARGA:  o = deva_visarga(&d); break; \
+                    case DEVA_OP_LONG:     o = deva_long_shift(&d); break; \
+                    /* ★カーソル移動と改行は本体（main.c）の仕事なので、ここでは字が出ない。 \
+                       ★★**default に落とさない** —— 落とすと、新しい op を足したときに \
+                         黙って別の処理になる（実際に踏んだ: CURSOR が long_shift に \
+                         なって `क` が `का` になっていた）。 */ \
+                    default:               o = (DevaOut){ { 0, 0 }, 0, 0, 0 }; break; \
+                    } \
+                    if (o.ok) { \
+                        len -= o.replace; if (len < 0) len = 0; \
+                        for (int z = 0; z < o.len; z++) buf[len++] = o.text[z]; \
+                    } \
+                } \
+                gp_sync_prev_deva(&dm, &fr); \
+            } \
+            printf("--- %s ---\n", name); \
+            show("  ", buf, len); \
+        } while (0)
+
+        /* 何も押していない 1 フレーム（エッジを作るために挟む） */
+        #define DREL { 0, -1, 0, -1, 0, 0, 0, 0, 0 }
+
+        /* किः LS↑ で k varga を latch → D-pad↑ で क → □（i）で ि */
+        static const DStep KI[] = {
+            { 1, -1, 0, -1, 0, 0, 0, 0, 0 },   /* LS↑ = k varga を latch */
+            DREL,
+            { 0, 0, 0, -1, 0, 0, 0, 0, 0 },    /* D-pad↑ = 無気無声 → क */
+            DREL,
+            { 0, -1, 0, 3, 0, 0, 0, 0, 0 },    /* ○（右）= i → ि */
+            DREL,
+        };
+        RUN("LS↑ + D-pad↑ + ○ → कि", KI);
+
+        /* ★latch は残る: もう一度 D-pad↑ を押すと同じ varga から出る */
+        static const DStep LATCH[] = {
+            { 1, -1, 0, -1, 0, 0, 0, 0, 0 },
+            DREL,
+            { 0, 0, 0, -1, 0, 0, 0, 0, 0 },    /* क */
+            DREL,
+            { 0, 1, 0, -1, 0, 0, 0, 0, 0 },    /* D-pad→ = 有気無声 → ख */
+            DREL,
+        };
+        RUN("★latch は残る（LS を戻さなくてよい）→ कख", LATCH);
+
+        /* ★中立 = प varga（LS を倒さないまま打てる ―― いちばん頻度の高い置き方） */
+        static const DStep NEUTRAL[] = {
+            { 0, 0, 0, -1, 0, 0, 0, 0, 0 },    /* D-pad↑ → प */
+            DREL,
+            { 0, -1, 1, -1, 0, 0, 0, 0, 0 },   /* LB = 鼻音 → म */
+            DREL,
+        };
+        RUN("★中立は प varga / LB は鼻音 → पम", NEUTRAL);
+
+        /* 非 varga: L3 で層に入り、D-pad↑ で य。★1 子音で自動 OFF */
+        static const DStep NONVARGA[] = {
+            { 0, -1, 0, -1, 0, 0, 1, 0, 0 },   /* L3 = 非 varga 層へ */
+            DREL,
+            { 0, 0, 0, -1, 0, 0, 0, 0, 0 },    /* D-pad↑ → य（そして層が閉じる） */
+            DREL,
+            { 0, 0, 0, -1, 0, 0, 0, 0, 0 },    /* ★もう一度 → 층は閉じているので प */
+            DREL,
+        };
+        RUN("★非 varga は 1 子音で閉じる → यप", NONVARGA);
+
+        /* 非 varga + LT = 摩擦音の層 */
+        static const DStep SIBILANT[] = {
+            { 0, -1, 0, -1, 0, 0, 1, 0, 0 },
+            DREL,
+            { 0, 0, 0, -1, 1, 0, 0, 0, 0 },    /* LT + D-pad↑ → श */
+            DREL,
+        };
+        RUN("LT で摩擦音の層 → श", SIBILANT);
+
+        /* conjunct: क → RT tap（halant）→ ष */
+        static const DStep CONJ[] = {
+            { 1, -1, 0, -1, 0, 0, 0, 0, 0 },
+            DREL,
+            { 0, 0, 0, -1, 0, 0, 0, 0, 0 },    /* क */
+            DREL,
+            { 0, -1, 0, -1, 0, 1, 0, 0, 0 },   /* RT を押す */
+            DREL,                              /* ★離した時に halant */
+            { 0, -1, 0, -1, 0, 0, 1, 0, 0 },   /* L3 = 非 varga */
+            DREL,
+            { 0, 1, 0, -1, 1, 0, 0, 0, 0 },    /* LT + D-pad→ → ष */
+            DREL,
+        };
+        RUN("RT tap で halant → क्ष", CONJ);
+
+        /* ★★RT + LS はキャレット移動（main.c が持つ）—— 離しても halant は出ない */
+        static const DStep RTLS[] = {
+            { 1, -1, 0, -1, 0, 0, 0, 0, 0 },
+            DREL,
+            { 0, 0, 0, -1, 0, 0, 0, 0, 0 },    /* क */
+            DREL,
+            { 0, -1, 0, -1, 0, 1, 0, 0, 0 },   /* RT を押す */
+            { 2, -1, 0, -1, 0, 1, 0, 0, 0 },   /* RT 押下中に LS→ = カーソル移動 */
+            DREL,                              /* ★離しても halant は出ない */
+        };
+        RUN("★RT+LS はカーソル移動 → halant が出ない → क", RTLS);
+        #undef RUN
+        #undef DREL
     }
     return 0;
 }
