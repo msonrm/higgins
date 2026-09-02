@@ -19,7 +19,10 @@
 #include "input.h"
 #include "text.h"
 #include "wakachi.h"
+#include "josa.h"
+#include "korean.h"
 #include "tsunagi.h"
+#include "tsunagi_ko.h"
 #include "eliza_bridge.h"
 #include "conv.h"
 
@@ -35,6 +38,8 @@
 extern const char _binary_script_txt_start[];
 extern const char _binary_script_txt_end[];
 /* ★英語の相手 = 1966 年 CACM の原典（vendor の付録を無加工で焼いたもの）。 */
+extern const char _binary_script_ko_txt_start[];
+extern const char _binary_script_ko_txt_end[];
 extern const char _binary_script_en_txt_start[];
 extern const char _binary_script_en_txt_end[];
 
@@ -55,17 +60,37 @@ static void paint_screen(uint16_t color)
         gp0_upload(0, y, W, BAND_H, band[0]);
 }
 
+/* いま話している相手（席）。★もとは `english` の真偽値だったが、韓国語で 3 つ目が
+   来たので enum にした。**日本語だけが変換を通る**ので、判定は seat != SEAT_JA。 */
+enum { SEAT_JA = 0, SEAT_EN = 1, SEAT_KO = 2, SEAT_N = 3 };
+static int seat;
+
+static int seat_slot(void)
+{
+    return seat == SEAT_EN ? HG_EN : seat == SEAT_KO ? HG_KO : HG_JA;
+}
+
+static int seat_lang(void)
+{
+    return seat == SEAT_EN ? GP_EN : seat == SEAT_KO ? GP_KO : GP_JA;
+}
+
 /* UTF-8 の 1 行を履歴へ積む。★折返し・禁則は render.c が持っている。 */
 static void say(const char *utf8, uint16_t color)
 {
     uint16_t buf[1024];
-    const int n = tsunagi(utf8, buf, (int)(sizeof buf / sizeof *buf));
+    const int max = (int)(sizeof buf / sizeof *buf);
+    /* ★出口は席で替わる。韓国語は**空白に意味がある**（띄어쓰기）ので、
+       日本語の tsunagi（日本語に隣接する空白を全部消す）は使えない。 */
+    const int n = seat == SEAT_KO ? tsunagi_ko(utf8, buf, max)
+                                  : tsunagi(utf8, buf, max);
     hist_line(buf, n, color);
 }
 
 /* ---- 打っている字（合成バッファ）---- */
 
 static GpMachine gm;
+static KoComposer ko;    /* 韓国語の合成中の音節（席が韓国語のときだけ動く） */
 /* ★Zenmai は 36 字（Zork のコマンドは短い）。Higgins は**自由文**を打つので広げる。
    ★**打つのは命令ではなく「相談」**なので、1 行に収まる前提そのものが違う
      （欄は下の draw_input が複数行で描き、溢れたぶんは流れる）。 */
@@ -83,9 +108,9 @@ static int fixed;
  *   「英語で書く」ではなく「別の相手に向き直る」ことになる。
  * ★英語には変換が無いので、打った字は**その場で確定**する（comp_insert の末尾）。
  *   これだけで L3 が 1 回で送信になり、R3 は「捨てるものが無い」になり、
- *   左スティック↓ は行移動になる —— ★英語専用の分岐を主ループに撒かずに済む。 */
-static int english;
-
+ *   左スティック↓ は行移動になる —— ★英語専用の分岐を主ループに撒かずに済む。
+ * ★★**韓国語も同じ道に乗る** —— ハングルは確定形なので変換が要らない。
+ *   合成（音節を組み立てる）のは korean.c で、そちらは「打った字」より内側の話。 */
 static void comp_insert(const uint16_t *t, int tn, int replace)
 {
     /* ★確定済みの中を編集したら、そこから先は未確定に戻す */
@@ -106,8 +131,8 @@ static void comp_insert(const uint16_t *t, int tn, int replace)
         comp[caret + i] = t[i];
     clen += tn;
     caret += tn;
-    if (english)
-        fixed = caret;                 /* ★英語は変換が無いので即確定（上の注記） */
+    if (seat != SEAT_JA)
+        fixed = caret;                 /* ★英語と韓国語は変換が無いので即確定（上の注記）*/
 }
 
 static void comp_bs(void)
@@ -150,6 +175,7 @@ static void caret_set(int pos)
         return;
     caret = pos;
     fixed = pos;
+    ko_commit(&ko);       /* ★動かしたら合成も切る（前の音節に받침が付くのを防ぐ） */
 }
 
 /* ---- 入力欄（複数行）----
@@ -196,7 +222,7 @@ static int box_rows = 1;               /* いま見せている行数（1..BOX_R
    ここが変わっても折返しが目の前で動くことはない。 */
 static int box_x1(void)
 {
-    if (!english)
+    if (seat != SEAT_EN)
         return BOX_X1;
     /* 枠の左端（W-MARGIN-EN_IND_W-3）の手前に、印の幅と隙間を空ける */
     return W - MARGIN - EN_IND_W - 3 - EN_MARK_W - 6;
@@ -351,7 +377,7 @@ static void draw_input(const uint16_t *s, int n, int car,
     int iw = 0;
     for (int i = 0; i < ilen; i++)
         iw += glyph_w(ind[i]);
-    const int inner = english ? EN_IND_W : (iw < 24 ? 24 : iw);
+    const int inner = seat == SEAT_EN ? EN_IND_W : (iw < 24 ? 24 : iw);
     const int kx = W - MARGIN - inner;
     const int iy = bufh - BASE;
     for (int c = kx - 3; c <= kx + inner + 2; c++)
@@ -741,16 +767,19 @@ static const char *profile_dir(void)
 static void send(const uint16_t *typed, int n)
 {
     static char buf[4096];
-    /* ★日本語だけ分かち書きを通す。英語は ELIZA が空白で切れるのでそのまま。
-       ★出口（tsunagi）は共通でよい —— あれは**日本語に隣接する空白だけ**を消すので、
-         英語の応答は 1 文字も動かない（tsunagi.h の注記）。 */
-    if (english)
+    /* ★入口は席ごと。英語は ELIZA が空白で切れるのでそのまま、日本語は分かち書き、
+       ★韓国語は**띄어쓰기があるので分かち書きは要らず**、語にくっついた
+         조사・어미 を剥がすだけ（josa）。 */
+    ko_commit(&ko);
+    if (seat == SEAT_EN)
         u16_to_u8(typed, n, buf, (int)sizeof buf);
+    else if (seat == SEAT_KO)
+        josa(typed, n, buf, (int)sizeof buf);
     else
         wakachi(typed, n, buf, (int)sizeof buf);
     draw_echo(typed, n);                       /* 打った通りを反響（＞付き） */
     hist_blank();
-    say(hg_eliza_response(english ? HG_EN : HG_JA, buf), INK);
+    say(hg_eliza_response(seat_slot(), buf), INK);
     scroll_new();
 }
 
@@ -811,7 +840,7 @@ static void interactive(void)
         GpFrame f = frame_of(p, fields * 17);
         const int row = f.row;
         GpAction a[4];
-        const int an = gp_step(&gm, english ? GP_EN : GP_JA, &f, a);
+        const int an = gp_step(&gm, seat_lang(), &f, a);
         for (int i = 0; i < an; i++) {
             /* ★変換中に打ち始めたら、その時点の選択で確定してから入れる
                （実機の指摘・2026-08-31）。IME の作法。 */
@@ -819,12 +848,17 @@ static void interactive(void)
                 conv_accept();
             if (a[i].type == GPA_KANA) {
                 comp_insert(a[i].text, a[i].tlen, a[i].replace);
-            } else {                   /* GPA_YOUON（後置の拗音シフト） */
+            } else if (a[i].type == GPA_YOUON) {   /* 後置の拗音シフト */
                 uint16_t o_[2];
                 int rep;
                 const int l = gp_resolve_youon(comp, caret, o_, &rep);
                 if (l && rep > 0)
                     comp_insert(o_, l, rep);
+            } else {                   /* GPA_KO_*（音節・받침・複合母音）*/
+                uint16_t ch;
+                int rep;
+                if (ko_apply(&ko, &a[i], &ch, &rep))
+                    comp_insert(&ch, 1, rep);
             }
             dirty = 1;
         }
@@ -834,11 +868,21 @@ static void interactive(void)
         const int rs = pad_rstick_flick(axes);
         if (rs)
             gp_break_rt_cycle(&gm);
-        if (rs == 2) {                 /* ↑ 濁点・半濁点をトグル / 英語はアポストロフィ */
-            if (english) {
+        if (rs == 2) {                 /* ↑ 濁点 / 英語 = アポストロフィ / 韓国語 = 子音サイクル */
+            if (seat == SEAT_EN) {
                 const uint16_t ch = 0x0027;    /* ' */
                 comp_insert(&ch, 1, 0);
                 dirty = 1;
+            } else if (seat == SEAT_KO) {
+                /* ★받침があれば받침、無ければ초성を巡回（평음 → 격음 → 경음）。
+                   ★日本語の濁点トグルと**同じ指**に来るのは偶然ではなく、
+                     どちらも「直前の字を濁らせる」操作だから。 */
+                uint16_t ch;
+                int rep;
+                if (ko_cycle(&ko, &ch, &rep)) {
+                    comp_insert(&ch, 1, rep);
+                    dirty = 1;
+                }
             } else {
                 uint16_t o_[2];
                 int rep;
@@ -858,17 +902,29 @@ static void interactive(void)
             } else if (caret) {
                 comp_bs();
                 gm.eagerSet = 0;
+                ko_commit(&ko);        /* ★消した字に받침を足せてしまうのを防ぐ */
                 dirty = 1;
             }
         }
-        if (rs == 3) {                 /* → 長音「ー」 / 英語はスラッシュ */
+        if (rs == 3) {                 /* → 長音「ー」/ 英語 = スラッシュ / 韓国語 = 複合母音 */
             if (conv_active())
                 conv_accept();
-            const uint16_t ch = english ? 0x002F : 0x30FC;
-            comp_insert(&ch, 1, 0);
-            if (english)
-                gm.engSmartCaps = 0;   /* ★GIME もここで解く（`/` は語の切れ目） */
-            dirty = 1;
+            if (seat == SEAT_KO) {
+                /* ★ㅏ/ㅓ を足して複合母音にする（ㅗ→ㅘ・ㅜ→ㅝ）。
+                   日本語の長音と同じ指 —— どちらも「直前の母音を伸ばす」操作。 */
+                uint16_t ch;
+                int rep;
+                if (ko_add_aeo(&ko, &ch, &rep)) {
+                    comp_insert(&ch, 1, rep);
+                    dirty = 1;
+                }
+            } else {
+                const uint16_t ch = seat == SEAT_EN ? 0x002F : 0x30FC;
+                comp_insert(&ch, 1, 0);
+                if (seat == SEAT_EN)
+                    gm.engSmartCaps = 0;   /* ★GIME もここで解く（`/` は語の切れ目） */
+                dirty = 1;
+            }
         }
         if (rs == 4) {
             /* ★↓ = 句読点。1 回「、」/ 2 回「。」/ 3 回 全角空白。
@@ -882,22 +938,34 @@ static void interactive(void)
             /* ★英語は **空白 → . → ,**（GIME の英語モードと同じ順）。日本語は 、→。→ 全角空白。
                ★英語で最初に来るのが空白なのは、語の切れ目が一番よく要るから ——
                  ELIZA は空白で語を切るので、**空白が打てないと 1 語しか送れない**。 */
-            uint16_t ch = english ? 0x0020 : 0x3001;
-            int rep = 0;
-            if (punct_n == 2) {
-                ch = english ? 0x002E : 0x3002;    /* . / 。 */
-                rep = 1;
-            } else if (punct_n >= 3) {
-                ch = english ? 0x002C : 0x3000;    /* , / 全角空白 */
-                rep = 1;
+            /* ★★**韓国語だけ 5 段**（空白 → . → ? → , → '）。韓国語は
+                 **記号を置く固定枠が無い**（↑ が子音サイクル・→ が複合母音で埋まり、
+                 母音グリッドにも隙間が無い）ので、ここに置くしかない。
+               ★`?` はエンジンが `.` に潰すが、**画面には打った通りが出る**ので入れる
+                 （日本語の わ行お段 `？` と同じ理由。gen_tables.py の注記）。
+               ★`'` は DOCTOR の応答が引用に使う —— **機械が印字する字はユーザーも
+                 打てる**、という日本語・英語で保たれている性質を韓国語でも保つ。 */
+            static const uint16_t PUNCT_JA[] = { 0x3001, 0x3002, 0x3000 };
+            static const uint16_t PUNCT_EN[] = { 0x0020, 0x002E, 0x002C };
+            static const uint16_t PUNCT_KO[] = { 0x0020, 0x002E, 0x003F, 0x002C, 0x0027 };
+            const uint16_t *tbl = seat == SEAT_EN ? PUNCT_EN
+                                : seat == SEAT_KO ? PUNCT_KO : PUNCT_JA;
+            const int steps = seat == SEAT_KO ? 5 : 3;
+            int idx = punct_n - 1;
+            if (idx >= steps)
+                idx = steps - 1;
+            const uint16_t ch = tbl[idx];
+            const int rep = punct_n > 1 ? 1 : 0;
+            if (punct_n >= steps) {
                 punct_n = 0;
                 punct_at = 0;
             }
             /* ★空白や記号が来たら SmartCaps を解く（step_english が表の字に対して
                やっているのと同じこと。こちらは表を通らない字なので手で解く）。
                ★**CapsLock は落とさない** —— 明示して掛けた固定は明示した操作で解く。 */
-            if (english)
+            if (seat == SEAT_EN)
                 gm.engSmartCaps = 0;
+            ko_commit(&ko);            /* ★記号が来たら音節はそこで終わり */
             comp_insert(&ch, 1, rep);
             dirty = 1;
         }
@@ -925,16 +993,22 @@ static void interactive(void)
                無くなるので、ELIZA 側に言語の判定を持ち込まずに済む。
                ★替わったことは**新しい相手の挨拶**で分かる（画面に出る唯一の印）。 */
             if (!clen) {
-                english = !english;
+                /* ★席が 3 つになったので**巡回**にした（日 → 英 → 韓 → 日）。
+                   ★2 択のときは「戻る」が自明だったが、3 つ以上では一周しないと
+                     戻れない —— そこはメニュー行きだが、まず巡回で実機に出す。 */
+                seat = (seat + 1) % SEAT_N;
                 /* GIME と同じくシフト状態は持ち越さない */
                 gm.engShiftNext = 0;
                 gm.engSmartCaps = 0;
                 gm.engCapsLock = 0;
                 gm.eagerSet = 0;
+                gm.korAllReleased = 1;
+                gm.korPatchimRollback = 0;
+                ko_commit(&ko);
                 punct_n = 0;
                 punct_at = 0;
                 hist_blank();
-                say(hg_eliza_greeting(english ? HG_EN : HG_JA), INK);
+                say(hg_eliza_greeting(seat_slot()), INK);
                 scroll_new();
                 prev_row = -1;         /* ★行が同じでも箱の中身が変わる */
                 dirty = 1;
@@ -1078,7 +1152,13 @@ static void interactive(void)
         uint16_t ind[4];
         int ilen;
         uint16_t mark = 0;
-        if (english) {
+        if (seat == SEAT_KO) {
+            /* ★韓国語は**行の子音 1 字**（日本語の「あ」と同じ形）。
+               母音は面ボタンで、RT で層が替わる —— 印は付けない（英語のシフトと違い、
+               ★押している間だけの層なので、状態として残らない）。 */
+            ind[0] = ko_row_char(row);
+            ilen = 1;
+        } else if (seat == SEAT_EN) {
             ilen = gp_row_chars_en(row, ind, 4);
             if (gm.engCapsLock)       mark = 0x25B2;   /* ▲ */
             else if (gm.engSmartCaps) mark = 0x25B3;   /* △ */
@@ -1091,7 +1171,7 @@ static void interactive(void)
             ind[0] = gp_row_char(row);
             ilen = 1;
         }
-        /* ★中身は (row, english, mark) だけで決まるので、行と印を見れば足りる。 */
+        /* ★中身は (row, seat, mark) だけで決まるので、行と印を見れば足りる。 */
         if (dirty || row != prev_row || mark != prev_mark) {
             if (conv_active()) {
                 /* ★表示は「確定済み ＋ 変換中の文節 ＋ **キャレットより後ろの
@@ -1167,6 +1247,12 @@ int main(void)
        相手」に見える**（読めていないことが画面のどこにも出ない）。 */
     if (!hg_eliza_init(HG_EN, _binary_script_en_txt_start, len_en, 1))
         say("英語のスクリプトが読めない。", INK);
+    /* ★韓国語は日本語と同じく **0**（組み込みメッセージを使わない）—— スクリプトが
+       100% 韓国語なので、`HMMM` が出ると相手が急に英語で返すことになる。
+       ★検査 tools/coverage_ko.py が「応答にラテン文字が出たら失敗」で見張っている。 */
+    const int len_ko = (int)(_binary_script_ko_txt_end - _binary_script_ko_txt_start);
+    if (!hg_eliza_init(HG_KO, _binary_script_ko_txt_start, len_ko, 0))
+        say("韓国語のスクリプトが読めない。", INK);
 
     view_bottom();
     render_window();

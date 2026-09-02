@@ -28,6 +28,9 @@ uint16_t ko_current(const KoComposer *k);      /* 合成中の音節（0 = 無�
  * ★**ここが唯一の適用点**。本体と検査で別々に書くと、片方でしか通らない値が出る。 */
 int ko_apply(KoComposer *k, const GpAction *a, uint16_t *out, int *replace);
 
+/* 行インジケータに出す字（互換ジャモ）。日本語の gp_row_char に当たる。 */
+uint16_t ko_row_char(int row);
+
 /* rs↑ = 받침があれば받침、無ければ초성をサイクル（GIME の handleKoreanOnsetCycle）。 */
 int ko_cycle(KoComposer *k, uint16_t *out, int *replace);
 /* rs→ = ㅏ/ㅓ 付加の複合母音（GIME の handleKoreanVowelAddAEo）。 */

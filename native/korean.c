@@ -14,6 +14,11 @@ static int lookup(const unsigned char (*tbl)[2], int n, int from)
     return -1;
 }
 
+uint16_t ko_row_char(int row)
+{
+    return KO_ROW_CHAR[row >= 0 && row < 10 ? row : 0];
+}
+
 void ko_init(KoComposer *k) { k->onset = k->nucleus = k->coda = -1; }
 
 void ko_commit(KoComposer *k) { ko_init(k); }
