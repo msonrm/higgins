@@ -14,7 +14,7 @@
 #       ├── higgins.aarch64
 #       ├── libhechima.so   変換エンジン（mozc）
 #       ├── mozc.data       辞書 19MB
-#       ├── higgins.otf     同梱フォント 11MB
+#       ├── higgins.otf     同梱フォント 13MB（日本語 + ハングル）
 #       └── licenses/
 #
 # ★**glibc の版がそのまま動く範囲を決める**。ここで焼いたバイナリは焼いた機械の

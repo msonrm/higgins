@@ -148,7 +148,7 @@ Select を押すと、**1966 年 CACM の原典 DOCTOR**（英語）に相手が
 | ELIZA と DOCTOR スクリプト | Anthony Hay による 1966 年版の再実装。原典は Weizenbaum papers から 2021 年に発見され、遺族が CC0 で許諾。★**英語の相手は原典の付録をそのまま焼いたもの**（訳でも移植でもない） | **CC0 1.0** |
 | かな漢字変換 | **powered by Mozc**（fcitx5-mozc 経由） | BSD 3-Clause |
 | 画面と入力の土台 | 同作者の Zenmai（PlayStation 版 Zork）から。機械に触る 9 関数と字の 5 関数だけを差し替えてある | MIT |
-| フォント | Noto Sans CJK JP の日本語部分（22,955 字） | OFL 1.1 |
+| フォント | Noto Sans CJK JP の日本語部分 + ハングル（34,477 字）。★**1 本のフォントから両方出る** | OFL 1.1 |
 | Higgins 本体 | msonrm | MIT |
 
 全文は `higgins/licenses/` に入っています。
