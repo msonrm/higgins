@@ -248,15 +248,48 @@ static int box_x1(void)
    ★欄の高さが動くので、行番号ではなく y そのものを持つ。 */
 static int focus_x = MARGIN, focus_y;
 
-/* 折返して各行の開始位置を出す。戻り値 = 行数（必ず 1 以上）。 */
-static int box_layout(const uint16_t *s, int n, int *start)
+/* ---- 入力欄の整形 ----
+ *
+ * ★**打っている字も整形を通す。** 本文（render.c）と同じ理由 —— 1 対 1 でない
+ *   言語（デーヴァナーガリー）は母音記号が前に回り、子音が縦に積んで合字になるので、
+ *   `draw24(code)` をどう並べても正しい絵にならない（glyph.h の頭書き）。
+ *
+ * ★★**割り付け・キャレット・下線が同じ整形結果を見ること。** 別々に整形すると
+ *   見えている行と動く先がずれる —— box_layout の頭書きにある「同じ割り付けを使う」が、
+ *   「行」から「グリフ」へ一段下りただけの話。
+ */
+enum { ISHAPE_N = COMP_MAX * 3 };      /* draw_input が受ける最大（変換中の t[]） */
+static Shaped ishape[ISHAPE_N];
+static int ishape_n;
+
+static int shape_input(const uint16_t *s, int n)
+{
+    ishape_n = shape_run(s, n, ishape, ISHAPE_N);
+    return ishape_n;
+}
+
+/* 論理の位置（何字目か）→ 整形した並びでの位置（何グリフ目か）。
+   ★合字と入れ替えがあると自明でないので、cluster を前から見て**最初に届いたもの**を
+     採る。1 対 1 の実装では logical をそのまま返すのと同じ。 */
+static int glyph_at(int logical)
+{
+    for (int i = 0; i < ishape_n; i++)
+        if ((int)ishape[i].cluster >= logical)
+            return i;
+    return ishape_n;
+}
+
+/* 折返して各行の開始位置を出す。戻り値 = 行数（必ず 1 以上）。
+   ★**start[] は整形した並びでの位置**（何グリフ目か）。論理の位置が要るところは
+     `ishape[k].cluster` を引くこと。 */
+static int box_layout(int m, int *start)
 {
     int nl = 0;
     start[nl++] = 0;
     int x = BOX_X0;
     const int x1 = box_x1();
-    for (int i = 0; i < n; i++) {
-        const int w = glyph_w(s[i]);
+    for (int i = 0; i < m; i++) {
+        const int w = ishape[i].adv;
         if (x + w > x1) {
             if (nl >= BOX_LINES)
                 break;
@@ -275,29 +308,33 @@ static int box_layout(const uint16_t *s, int n, int *start)
      動く先がずれる。 */
 static int caret_line_move(int d)
 {
+    const int m = shape_input(comp, clen);
     int start[BOX_LINES];
-    const int nl = box_layout(comp, clen, start);
+    const int nl = box_layout(m, start);
     if (nl <= 1)
         return 0;
+    const int cg = glyph_at(caret);    /* ★キャレットは論理・割り付けはグリフ */
     int cl = 0;
     for (int i = 0; i < nl; i++)
-        if (start[i] <= caret)
+        if (start[i] <= cg)
             cl = i;
     const int nc = cl + d;
     if (nc < 0 || nc >= nl)
         return 0;
     /* いまの行内での横位置を測り、行った先で一番近いところへ落とす */
     int x = 0;
-    for (int i = start[cl]; i < caret; i++)
-        x += glyph_w(comp[i]);
+    for (int i = start[cl]; i < cg; i++)
+        x += ishape[i].adv;
     const int i0 = start[nc];
-    const int i1 = (nc + 1 < nl) ? start[nc + 1] : clen;
+    const int i1 = (nc + 1 < nl) ? start[nc + 1] : m;
     int cx = 0, pos = i0;
-    while (pos < i1 && cx + glyph_w(comp[pos]) / 2 < x) {
-        cx += glyph_w(comp[pos]);
+    while (pos < i1 && cx + ishape[pos].adv / 2 < x) {
+        cx += ishape[pos].adv;
         pos++;
     }
-    caret_set(pos);
+    /* ★**論理へ戻して置く。** キャレットの持ち主（caret）は「何字目か」なので、
+       グリフの番号をそのまま入れると、合字のある行で打つ場所がずれる。 */
+    caret_set(pos < m ? (int)ishape[pos].cluster : clen);
     return 1;
 }
 
@@ -312,8 +349,13 @@ static void draw_input(const uint16_t *s, int n, int car,
                        const uint16_t *ind, int ilen, uint16_t mark,
                        int ua, int ub, int fa, int fb)
 {
+    const int m = shape_input(s, n);
     int start[BOX_LINES];
-    const int nl = box_layout(s, n, start);
+    const int nl = box_layout(m, start);
+    /* ★キャレットと注目文節は**論理の位置**で来るので、グリフの位置へ写す
+       （1 対 1 の実装ではどちらも同じ数になる）。 */
+    const int cg = (car >= 0) ? glyph_at(car) : -1;
+    const int fg = (fa >= 0) ? glyph_at(fa) : -1;
 
     /* ★打った量で欄を伸ばす（1 行から。上限 BOX_ROWS）。高さが変わったら
        本文窓を作り直す —— 欄の下端は動かないので、上へ伸びる。 */
@@ -330,7 +372,7 @@ static void draw_input(const uint16_t *s, int n, int car,
 
     int cl = 0;                        /* キャレット（変換中は focus）のある行 */
     for (int i = 0; i < nl; i++)
-        if (start[i] <= (car < 0 ? fa : car))
+        if (start[i] <= (car < 0 ? fg : cg))
             cl = i;
 
     /* 見える窓をキャレットに追従させる（★キャレットは常に見えている） */
@@ -347,31 +389,36 @@ static void draw_input(const uint16_t *s, int n, int car,
 
     for (int r = 0; r < rows && top + r < nl; r++) {
         const int i0 = start[top + r];
-        const int i1 = (top + r + 1 < nl) ? start[top + r + 1] : n;
+        const int i1 = (top + r + 1 < nl) ? start[top + r + 1] : m;
         const int y = BOX_GAP + r * BASE;
         int x = BOX_X0, cx = BOX_X0;
         for (int i = i0; i < i1; i++) {
-            if (i == car)
+            const int lg = (int)ishape[i].cluster;   /* ★この画がどの字から来たか */
+            const int aw = ishape[i].adv;
+            if (i == cg)
                 cx = x;
-            if (fa >= 0 && i == fa) {
+            if (i == fg) {
                 focus_x = x;
                 focus_y = boxy + r * BASE;
             }
-            if (x + glyph_w(s[i]) > box_x1())
-                break;                 /* ★draw24 は横の範囲を見ない */
-            draw24(box, bufh, x, y, s[i], INK);
-            if (ua >= 0 && i >= ua && i < ub) {   /* 未確定の下線 */
-                const int on = (i >= fa && i < fb);
+            if (x + aw > box_x1())
+                break;                 /* ★draw24_gid は横の範囲を見ない */
+            draw24_gid(box, bufh, x + ishape[i].dx, y + ishape[i].dy, ishape[i].gid, INK);
+            /* ★未確定の下線は**論理の位置**で決める（文節は字で数えるので）。
+               引く幅は**画の送り**。合字だと 2 字ぶんが 1 画になるが、
+               そのときは下線も 1 画ぶん引くのが正しい。 */
+            if (ua >= 0 && lg >= ua && lg < ub) {
+                const int on = (lg >= fa && lg < fb);
                 const uint16_t col = on ? ACCENT : DIM;
                 for (int t = 0; t < (on ? 2 : 1); t++)
-                    for (int c = 0; c < glyph_w(s[i]); c++)
+                    for (int c = 0; c < aw; c++)
                         box[y + BASE - 1 - t][x + c] = col;
             }
-            x += glyph_w(s[i]);
+            x += aw;
         }
         if (car < 0 || top + r != cl)
             continue;
-        if (car >= i1) {               /* 行末: 字の右へ 3px */
+        if (cg >= i1) {                /* 行末: 字の右へ 3px */
             cx = x;
             for (int rr = 0; rr < BASE; rr++)
                 for (int c = 0; c < 3; c++)
