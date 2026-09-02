@@ -403,7 +403,8 @@ static void draw_input(const uint16_t *s, int n, int car,
             }
             if (x + aw > box_x1())
                 break;                 /* ★draw24_gid は横の範囲を見ない */
-            draw24_gid(box, bufh, x + ishape[i].dx, y + ishape[i].dy, ishape[i].gid, INK);
+            draw24_gid(box, bufh, x + ishape[i].dx, y + ishape[i].dy,
+                       ishape[i].gid, ishape[i].face, INK);
             /* ★未確定の下線は**論理の位置**で決める（文節は字で数えるので）。
                引く幅は**画の送り**。合字だと 2 字ぶんが 1 画になるが、
                そのときは下線も 1 画ぶん引くのが正しい。 */

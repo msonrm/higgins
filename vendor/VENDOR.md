@@ -78,6 +78,32 @@ Web 版で日本語を打つための一式。**自作部分 MIT / 変換エン�
 > **取り込む前にここへ 1 行足す**ことを手順にする。
 
 
+## `native/higgins-deva.ttf` —— デーヴァナーガリーのフォント
+
+ヒンディー語の席のための **2 本目**。★**実体は追跡しない**（`higgins.otf` と同じ扱い）——
+`native/make_font.sh` が **md5 を pin して取ってくる**。
+
+| | |
+|---|---|
+| もの | **Noto Sans Devanagari Regular** Version 2.006 |
+| 出どころ | `https://raw.githubusercontent.com/notofonts/notofonts.github.io/main/fonts/NotoSansDevanagari/hinted/ttf/NotoSansDevanagari-Regular.ttf` |
+| 大きさ | **244,284 bytes** / md5 `f4ae6809bd8c31573370e8da72514012` |
+| ライセンス | **SIL Open Font License 1.1**（Noto Sans CJK と同じだが、著作権表記が別なので `licenses/` には別ファイルで入れる） |
+
+★★**なぜ 1 本にまとめないか** —— Noto Sans CJK は **CFF**、Noto Sans Devanagari は
+**glyf** で、1 つのフォントに両方の outline 形式は入らない（実測）。
+★韓国語が「同じ 1 本に範囲を 3 行足すだけ」で済んだのと**決定的に違う**ところで、
+`glyph_ft.c` に 2 本目の面を開く機構が要るのはこのため。
+
+★★**なぜ subset しないか** —— Devanagari ブロックだけに絞っても **244KB → 209KB** で
+ほとんど減らない。中身の大半が**合字と配置の表**（GSUB/GPOS）で、そこは落とせない
+（落とすと母音記号が動かず結合子音も出ず、★読めない字になる）。減らないものに
+手順を増やす価値が無いので、取ってきたものをそのまま置く。
+
+★**版を md5 で pin する理由** —— フォントが変われば**字形も送りも変わる**ので、
+`native/shots.sh` の突き合わせが理由なく赤くなる。上流で版が上がったら、
+絵を確かめてから `make_font.sh` の `DEVA_MD5` を更新すること。
+
 ## `native/` —— Zenmai の殻（PortMaster 版の土台）
 
 キーボードの無い aarch64 Linux ハンドヘルドで動かすための土台。
@@ -93,24 +119,29 @@ Web 版で日本語を打つための一式。**自作部分 MIT / 変換エン�
   ★**きつい方が共有コードを持たないと、ゆるい方（Linux）で malloc を気軽に使う・
   float を使う・文字コードを u32 にする、が黙って通ってしまう。**
 
-取り込み: **2026-09-02** / 上流の版 = `ee9edae`（Merge pull request #38 from msonrm/feat/shape-run ―― 字の境界に整形を足す）
+取り込み: **2026-09-03** / 上流の版 = `b229837`（Merge pull request #40 from msonrm/feat/deva-face ―― 2 本目の面と HarfBuzz の整形）
 
 | ファイル | 行 | md5 |
 |---|---|---|
 | `plat.h` | 54 | `2cd7b40f18bbbd9a0a9677c51a179da3` |
 | `plat_sdl.c` | 416 | `bb3a88cea38bea54512a2bf051fc8ff1` |
-| `glyph.h` | 80 | `7a1dd3426dc72d1bb3add9da745d62ca` |
-| `glyph_ft.c` | 353 | `f20171b537f1e1ef005f51617f8e06c2` |
-| `render.c` | 636 | `dbd710e29f0fb93f78d4b7984ac2d6a2` |
-| `render.h` | 68 | `e2d8f2a44ab99396b5e185556bbe356f` |
+| `glyph.h` | 106 | `f6f0c08c4bece3e7b008bce1a1fb156a` |
+| `glyph_ft.c` | 586 | `fde3886d5415f22a66c735157681fd5e` |
+| `render.c` | 640 | `e676522a051dc4aca84986e30637132c` |
+| `render.h` | 79 | `1caf9ab4c90de585d31d42ea90935bcd` |
 | `card.h` | 14 | `7a05b47530c3eec9a5c86d185c33b051` |
 | `save_file.c` | 72 | `6f99dbca6385eb3c09ace1ecbf3a8473` |
 | `test_glyph.c` | 201 | `a039ec0e701ab7897ee6f49ccae6b7f1` |
 
-★2026-09-02 の取り込みで増えたのは**字の境界の整形**（`shape_run` / `draw24_gid`）——
+★増えたのは**字の境界の整形**（`shape_run` / `draw24_gid`）と、**2 本目の面**——
 デーヴァナーガリーは字の並びと画の並びが 1 対 1 でないので、`draw24(code)` を
-どう並べても正しい絵にならない。★**PS1 は無傷**（焼いた版は永久に 1 対 1）。
+どう並べても正しい絵にならない。★**PS1 は無傷**（焼いた版は永久に 1 対 1 で、
+HarfBuzz は `-DZM_HARFBUZZ` を渡したビルドにしか入らない）。
 詳しくは `native/glyph.h` の頭書きと、Zenmai の `docs/ps1-implementation-notes.md`。
+
+★**Higgins が渡すもの**: `-DZM_BASE=30`（器の高さ ―― デーヴァナーガリーは 22px でも
+ink が 29 行あるので 24 行に入らない）と `-DZM_HARFBUZZ`（整形）。どちらも
+`native/build.sh` の `CFLAGS`。★Zenmai は既定（24・整形なし）のまま。
 
 ### ★取り込みリストから外れたもの（2026-09-02）
 

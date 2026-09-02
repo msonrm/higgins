@@ -68,3 +68,38 @@ n13 = f["name"].getDebugName(13)
 print(f"OK: {sys.argv[1]}  {len(f.getBestCmap())} 字")
 print(f"    ライセンス表記: {'あり' if n13 else '★無い（--name-IDs+= を確認）'}")
 PY
+
+# ---- 2 本目: デーヴァナーガリー（ヒンディー語）----
+#
+# ★★**1 本にまとめられない。** Noto Sans CJK は **CFF**、Noto Sans Devanagari は
+#   **glyf** で、1 つのフォントに両方の outline 形式は入らない（実測）。
+#   ★韓国語が「範囲を 3 行足すだけ」で済んだのと**決定的に違う**ところで、
+#   `glyph_ft.c` に 2 本目の面を開く機構が要るのはこのため。
+#
+# ★**subset しない。** Devanagari ブロックだけに絞っても **244KB → 209KB** で
+#   ほとんど減らない —— 中身の大半が**合字と配置の表**（GSUB/GPOS）で、そこは
+#   落とせない（落とすと母音記号が動かず結合子音も出ず、★読めない字になる）。
+#   減らないものに手順を増やす価値が無いので、取ってきたものをそのまま置く。
+#
+# ★**システムからは拾えない** —— 開発機に Devanagari フォントは 1 本も無い（実測）。
+#   ★版を md5 で pin する。フォントが変われば**字形も送りも変わる**ので、
+#   `shots.sh` の突き合わせが理由なく赤くなる。
+DEVA_OUT="${2:-higgins-deva.ttf}"
+DEVA_URL="https://raw.githubusercontent.com/notofonts/notofonts.github.io/main/fonts/NotoSansDevanagari/hinted/ttf/NotoSansDevanagari-Regular.ttf"
+DEVA_MD5="f4ae6809bd8c31573370e8da72514012"   # Version 2.006 / 244,284 bytes
+
+if [ -f "$DEVA_OUT" ] && [ "$(md5sum "$DEVA_OUT" | cut -d' ' -f1)" = "$DEVA_MD5" ]; then
+    echo "OK: $DEVA_OUT（既にある・md5 一致）"
+else
+    echo "取ってくる: $DEVA_URL"
+    curl -sfL -o "$DEVA_OUT.tmp" "$DEVA_URL" || { echo "★取得に失敗" >&2; exit 1; }
+    got=$(md5sum "$DEVA_OUT.tmp" | cut -d' ' -f1)
+    if [ "$got" != "$DEVA_MD5" ]; then
+        rm -f "$DEVA_OUT.tmp"
+        echo "★md5 が違う（期待 $DEVA_MD5 / 実際 $got）—— 上流で版が上がった可能性。" >&2
+        echo "  絵が変わるので、確かめてから DEVA_MD5 を更新すること。" >&2
+        exit 1
+    fi
+    mv "$DEVA_OUT.tmp" "$DEVA_OUT"
+    echo "OK: $DEVA_OUT（$(stat -c%s "$DEVA_OUT") bytes）"
+fi

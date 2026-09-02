@@ -35,6 +35,8 @@ export LD_LIBRARY_PATH="$GAMEDIR:$GAMEDIR/libs.${DEVICE_ARCH}:$LD_LIBRARY_PATH"
 # ★同梱フォント。環境変数の名が ZENMAI_ なのは、字を描く層（glyph_ft.c）を
 #   Zenmai から 1 バイトも変えずに vendoring しているため（上流と md5 で照合できる）。
 export ZENMAI_FONT="$GAMEDIR/higgins.otf"
+# ★2 本目（デーヴァナーガリー）。★無くても他の席は動く（豆腐になるのはヒンディー語だけ）。
+export ZENMAI_FONT_DEVA="$GAMEDIR/higgins-deva.ttf"
 
 # ★かな漢字変換の学習とユーザー辞書の置き場。**置き場所を決めるのは起動スクリプトの
 #   仕事**で、ゲーム側は環境変数を見るだけ（Zenmai がセーブでやったのと同じ形）。
