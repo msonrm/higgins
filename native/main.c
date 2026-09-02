@@ -811,7 +811,7 @@ static void interactive(void)
         GpFrame f = frame_of(p, fields * 17);
         const int row = f.row;
         GpAction a[4];
-        const int an = gp_step(&gm, english, &f, a);
+        const int an = gp_step(&gm, english ? GP_EN : GP_JA, &f, a);
         for (int i = 0; i < an; i++) {
             /* ★変換中に打ち始めたら、その時点の選択で確定してから入れる
                （実機の指摘・2026-08-31）。IME の作法。 */
