@@ -41,10 +41,22 @@ import argparse
 import io
 import sys
 
-from wakachi import collect_vocab, normalize_punct
+from wakachi import PUNCT, collect_vocab
 from eliza_script import parse, tokenize
 
 MARK = "·"
+
+# ★ELIZA は "," "." "BUT" を delimiter として節を切る（エンジンに焼かれている）。
+#   ★**韓国語は ASCII の句読点を打つ**ので、`wakachi.py` の PUNCT（全角と ! ? だけ）
+#   では足りない —— `.` が語にくっついたままだと「슬퍼요.」が 1 塊になり、
+#   ★**受け皿の「요」が切り出せずに NONE へ落ちる**（韓国語モードが打つのは ASCII）。
+PUNCT_KO = dict(PUNCT, **{".": " . ", ",": " , "})
+
+
+def normalize_punct_ko(text):
+    for k, v in PUNCT_KO.items():
+        text = text.replace(k, v)
+    return text
 
 # 交替する 조사 → 代表形。★受け側（tsunagi_ko.py の JOSA_FORM）と対。片方だけ増やさないこと。
 JOSA_CANON = {
@@ -155,7 +167,7 @@ def split_run(run, vocab, maxlen):
 
 def josa(text, vocab, maxlen):
     out = []
-    for run in normalize_punct(text).split():
+    for run in normalize_punct_ko(text).split():
         if run in (",", "."):
             out.append(run)
             continue

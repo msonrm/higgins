@@ -15,7 +15,7 @@
 extern "C" {
 #endif
 
-enum { HG_JA = 0, HG_EN = 1, HG_SLOTS = 2 };
+enum { HG_JA = 0, HG_EN = 1, HG_KO = 2, HG_SLOTS = 3 };
 
 /* スクリプト（UTF-8・S 式）を読んで、その席の ELIZA を起こす。1 = 成功
  *

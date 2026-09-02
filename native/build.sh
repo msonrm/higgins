@@ -21,11 +21,15 @@ SCRIPT="${SCRIPT:-../doctor/ja.txt}"
 # ★英語の相手は **1966 年 CACM の原典そのもの**（vendor の付録を無加工で焼く）。
 #   訳でも移植でもないので、ここが「原典がそのまま動く」という主張の実物になる。
 SCRIPT_EN="${SCRIPT_EN:-../vendor/eliza/scripts/ELIZA-script-DOCTOR-original-1966-CACM-appendix.txt}"
+SCRIPT_KO="${SCRIPT_KO:-../doctor/ko.txt}"
 
 # ---- 1. 語彙を焼く ----
 # ★**毎回焼く**。生成物を残すと、スクリプトを直したのに切れ方が変わらない、という
 #   形でいつか踏む（規則の正典は tools/wakachi.py の collect_vocab）。
 $PY ../tools/gen_vocab.py "$SCRIPT" vocab.h
+# ★韓国語は語彙に加えて**語尾と縮約の表**も焼く（規則の正典は tools/josa.py）。
+$PY ../tools/gen_vocab.py "$SCRIPT_KO" vocab_ko.h VOCAB_KO
+$PY ../tools/gen_josa.py josa_tables.h tsunagi_ko_tables.h
 
 # ---- 2. スクリプトを実行ファイルに焼き込む ----
 # ★ファイルを外に置くと「同梱してある」という主張が配布の形に依存してしまう
@@ -34,6 +38,7 @@ $PY ../tools/gen_vocab.py "$SCRIPT" vocab.h
 #   （_binary_script_txt_start / _end を test_reply.c と main.c が参照している）。
 cp "$SCRIPT" script.txt
 cp "$SCRIPT_EN" script_en.txt
+cp "$SCRIPT_KO" script_ko.txt
 ARCH=$(uname -m)
 case "$ARCH" in
     aarch64) OFMT="elf64-littleaarch64"; OBIN="aarch64" ;;
@@ -47,6 +52,7 @@ rm -rf "$OBJ"
 mkdir -p "$OBJ"
 objcopy -I binary -O "$OFMT" -B "$OBIN" script.txt "$OBJ/script_txt.o"
 objcopy -I binary -O "$OFMT" -B "$OBIN" script_en.txt "$OBJ/script_en_txt.o"
+objcopy -I binary -O "$OFMT" -B "$OBIN" script_ko.txt "$OBJ/script_ko_txt.o"
 
 # ---- 3. 焼く ----
 CFLAGS="${CFLAGS:--O2 -Wall} -DZM_SDL -I. $(pkg-config --cflags sdl2 freetype2)"
@@ -80,7 +86,7 @@ done
 # ★配布では実行ファイルの隣、開発機では vendor/ の下。どちらでも解決できるよう両方。
 LDFLAGS="$LDFLAGS -L$HECHIMA_DIR/$ARCH -lhechima -Wl,-rpath,\$ORIGIN:\$ORIGIN/$HECHIMA_DIR/$ARCH"
 
-SRC_C="main.c text.c wakachi.c tsunagi.c conv.c content_stub.c render.c plat_sdl.c glyph_ft.c input.c"
+SRC_C="main.c text.c wakachi.c tsunagi.c josa.c tsunagi_ko.c conv.c content_stub.c render.c plat_sdl.c glyph_ft.c input.c"
 
 OBJS=""
 for f in $SRC_C; do
@@ -94,7 +100,7 @@ $CXX $CXXFLAGS -c eliza_bridge.cpp -o "$OBJ/eliza_bridge.o"
 
 # shellcheck disable=SC2086
 $CXX -o "$OUT" $OBJS "$OBJ/eliza_bridge.o" "$OBJ/script_txt.o" "$OBJ/script_en_txt.o" \
-     $LDFLAGS $LDCXX
+     "$OBJ/script_ko_txt.o" $LDFLAGS $LDCXX
 
 # ---- 4. 検査用のホストビルド ----
 # ★**本体と同じ .o を使う**。別に焼き直すと「検査したもの」と「載っているもの」が
@@ -103,7 +109,8 @@ $CXX -o "$OUT" $OBJS "$OBJ/eliza_bridge.o" "$OBJ/script_txt.o" "$OBJ/script_en_t
 $CC $CFLAGS -c test_reply.c -o "$OBJ/test_reply.o"
 # shellcheck disable=SC2086
 $CXX -o test_reply "$OBJ/test_reply.o" "$OBJ/text.o" "$OBJ/wakachi.o" "$OBJ/tsunagi.o" \
-     "$OBJ/eliza_bridge.o" "$OBJ/script_txt.o" "$OBJ/script_en_txt.o" $LDCXX
+     "$OBJ/josa.o" "$OBJ/tsunagi_ko.o" "$OBJ/eliza_bridge.o" "$OBJ/script_txt.o" \
+     "$OBJ/script_en_txt.o" "$OBJ/script_ko_txt.o" $LDCXX
 
 # 変換だけを SDL 抜きで走らせる小道具（★UI の前に変換の成立を見るため）
 # shellcheck disable=SC2086

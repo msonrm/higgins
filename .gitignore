@@ -26,8 +26,12 @@ dist/
 #   という形でいつか踏む（native/build.sh は毎回焼き直す）。
 native/obj/
 native/vocab.h
+native/vocab_ko.h
+native/josa_tables.h
+native/tsunagi_ko_tables.h
 native/script.txt
 native/script_en.txt
+native/script_ko.txt
 native/higgins
 native/test_reply
 *.raw
