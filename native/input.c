@@ -15,7 +15,7 @@ void gp_init(GpMachine *s)
     s->korAllReleased = 1;      /* ★真から始める（machine.ts の初期値） */
 }
 
-void gp_sync_prev(GpMachine *s, const GpFrame *f)
+void gp_sync_prev_kana(GpMachine *s, const GpFrameKana *f)
 {
     s->prevConsonantCount = f->consonantCount;
     s->prevVowelPressed = f->vowelNow;
@@ -55,7 +55,7 @@ static void push_kana1(GpAction *a, unsigned short c, int replace)
     a->replace = replace;
 }
 
-static int step_japanese(GpMachine *s, const GpFrame *f, GpAction out[4])
+static int step_japanese(GpMachine *s, const GpFrameKana *f, GpAction out[4])
 {
     int n = 0;
     int v = f->vowel < 0 ? 0 : f->vowel;
@@ -131,7 +131,7 @@ static int is_alpha(unsigned short c)
     return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 }
 
-static int step_english(GpMachine *s, const GpFrame *f, GpAction out[4])
+static int step_english(GpMachine *s, const GpFrameKana *f, GpAction out[4])
 {
     int n = 0;
     int v = f->vowel < 0 ? 0 : f->vowel;
@@ -229,7 +229,7 @@ static int step_english(GpMachine *s, const GpFrame *f, GpAction out[4])
  * D-pad では表せないため。
  * ★合成そのものは korean.c が持つ。ここは「何をするか」を決めるだけ。
  */
-static int step_korean(GpMachine *s, const GpFrame *f, GpAction out[4])
+static int step_korean(GpMachine *s, const GpFrameKana *f, GpAction out[4])
 {
     int n = 0;
     const int v = f->vowel >= 0 ? f->vowel : 0;
@@ -332,7 +332,7 @@ static int step_korean(GpMachine *s, const GpFrame *f, GpAction out[4])
     return n;
 }
 
-int gp_step(GpMachine *s, int lang, const GpFrame *f, GpAction out[4])
+int gp_step_kana(GpMachine *s, int lang, const GpFrameKana *f, GpAction out[4])
 {
     for (int i = 0; i < 4; i++) {
         static const GpAction zero;
@@ -406,4 +406,170 @@ int gp_resolve_dakuten(const unsigned short *tail, int n, unsigned short out[2],
     out[0] = cycled;
     *replace = 1;
     return 1;
+}
+
+/* ---- デーヴァナーガリー ----
+ *
+ * ★★**席によってスティックの役が違う。** かなの席は LS がキャレット移動だが、
+ *   ここでは **LS が varga（子音群）を選ぶ**。RS も母音・修飾子・backspace・句読点で
+ *   埋まるので、キャレット移動は **RT + LS** へ退避している（GIME の実機判断）。
+ *   ★**頻度で決まっている** —— 実測でヒンディー語の子音 128 個のうち varga の切替が
+ *   45 回・非 varga が 44 個（34%）。入れ替えると**子音の 69% で RT を噛む**。
+ *
+ * ★**RT は「修飾の入口」**で、押している間の LS / L3 は別の意味を持ち、
+ *   ★**何にも使われずに離されたときだけ** halant になる。
+ *   その判定（rtUsedForCursor）は**ここが持つ**が、カーソル移動と改行そのものは
+ *   席に依存しない操作なので main.c が持つ（呼んだら deva_consume_rt を呼ぶこと）。
+ */
+#include "devanagari_tables.h"
+
+void deva_machine_init(DevaMachine *s)
+{
+    static const DevaMachine zero;
+    *s = zero;
+    s->prevVowel = -1;
+    s->prevDpad = -1;
+}
+
+void deva_consume_rt(DevaMachine *s) { s->rtUsedForCursor = 1; }
+
+/* LS の向き（0=中立 1=↑ 2=→ 3=↓ 4=←）→ varga の番号。
+   ★★**並びが違う。** varnamala を時計回りに載せてあるので
+     ↑=क(0) →=च(1) ↓=ट(2) ←=त(3) **中立=प(4)** ——
+     「中立が 0」ではない（LS を倒さない状態にいちばん頻度の高い प を置くため）。 */
+static int varga_of(int lsDir)
+{
+    switch (lsDir) {
+    case 1:  return 0;                 /* ↑ = कवर्ग */
+    case 2:  return 1;                 /* → = चवर्ग */
+    case 3:  return 2;                 /* ↓ = टवर्ग */
+    case 4:  return 3;                 /* ← = तवर्ग */
+    default: return 4;                 /* 中立 = पवर्ग */
+    }
+}
+
+unsigned short deva_head_char(const DevaMachine *s, int ltNow)
+{
+    if (s->nonVarga)
+        return ltNow ? DEVA_SIBILANT[0] : DEVA_SEMIVOWEL[0];
+    return DEVA_VARGA_HEAD[varga_of(s->lsLatch)];
+}
+
+static int deva_push(GpAction out[4], int n, int op, unsigned short ch, unsigned short alt)
+{
+    if (n >= 4)
+        return n;
+    out[n].type = GPA_DEVA;
+    out[n].deva_op = op;
+    out[n].deva_ch = ch;
+    out[n].deva_alt = alt;
+    return n + 1;
+}
+
+int gp_step_deva(DevaMachine *s, const GpFrameDeva *f, GpAction out[4])
+{
+    int n = 0;
+    for (int i = 0; i < 4; i++) {
+        static const GpAction zero;
+        out[i] = zero;                 /* ★毎回ゼロにする（前の指示が残ると黙って効く） */
+    }
+
+    /* ★RT の押下エッジで「カーソルに使った」を先に落とす —— LS の処理より前に
+       やることで、同じフレームで RT press と LS edge が起きても順序が合う
+       （GIME の注記。実機で踏んだ順序の問題）。 */
+    if (f->rtNow && !s->prevRT)
+        s->rtUsedForCursor = 0;
+
+    /* --- LS: RT 押下中はキャレット移動 / それ以外は varga の latch --- */
+    if (f->lsDir && f->lsDir != s->prevLsDir) {
+        if (f->rtNow) {
+            /* ★横は -1/+1、縦は -2/+2。★**ここで「RT を使った」を立てる** ——
+               立てないと、離したときに halant が出る。 */
+            static const short DIR[5] = { 0, -2, 1, 2, -1 };   /* 中立/↑/→/↓/← */
+            n = deva_push(out, n, DEVA_OP_CURSOR, (unsigned short)DIR[f->lsDir], 0);
+            s->rtUsedForCursor = 1;
+        } else {
+            s->lsLatch = (s->lsLatch == f->lsDir) ? 0 : f->lsDir;
+        }
+    }
+
+    /* --- L3: RT 押下中は改行 / それ以外は非 varga 層 --- */
+    if (f->l3Now && !s->prevL3 && f->rtNow) {
+        n = deva_push(out, n, DEVA_OP_COMMIT, 0, 0);
+        s->rtUsedForCursor = 1;
+    } else if (f->l3Now && !s->prevL3) {
+        s->nonVarga = !s->nonVarga;
+        /* ★latch も落とす —— 押し込みながら傾けた方向が次の click まで残る、
+           という事故を防ぐ（GIME の注記）。 */
+        s->lsLatch = 0;
+    }
+
+    /* --- LT + RT の同時押し: visarga。★halant を抑止する --- */
+    if (f->ltNow && f->rtNow && !(s->prevLT && s->prevRT)) {
+        n = deva_push(out, n, DEVA_OP_VISARGA, 0, 0);
+        s->rtUsedForCursor = 1;
+    }
+
+    /* --- D-pad: 子音 --- */
+    if (f->dpad >= 0 && f->dpad != s->prevDpad) {
+        unsigned short c;
+        if (s->nonVarga) {
+            c = f->ltNow ? DEVA_SIBILANT[f->dpad] : DEVA_SEMIVOWEL[f->dpad];
+            /* ★**1 子音で自動 OFF**（one-shot）。連続して非 varga を打つなら
+               もう一度 L3 を押す（GIME の実機判断）。 */
+            s->nonVarga = 0;
+        } else {
+            c = DEVA_VARGA[varga_of(s->lsLatch)][f->dpad];
+        }
+        n = deva_push(out, n, DEVA_OP_CONSONANT, c, 0);
+    }
+
+    /* --- LB: その varga の鼻音。★非 varga 層とは独立（GIME の注記）--- */
+    if (f->lbNow && !s->prevLb)
+        n = deva_push(out, n, DEVA_OP_CONSONANT, DEVA_VARGA[varga_of(s->lsLatch)][4], 0);
+
+    /* --- 面ボタン（RB を含む 0..4）: 母音。
+           ★matra と独立母音の**両方**を渡す —— どちらになるかは合成器が決める。
+           ★vowel==0（RB）は LT と組むと nukta（母音ではない）。 --- */
+    if (f->vowel >= 0 && f->vowel != s->prevVowel) {
+        if (f->vowel == 0 && f->ltNow) {
+            n = deva_push(out, n, DEVA_OP_NUKTA, 0, 0);
+        } else {
+            const unsigned short m = f->ltNow && DEVA_VOWEL_MATRA_LT[f->vowel]
+                                     ? DEVA_VOWEL_MATRA_LT[f->vowel]
+                                     : DEVA_VOWEL_MATRA[f->vowel];
+            const unsigned short v = f->ltNow && DEVA_VOWEL_INDEP_LT[f->vowel]
+                                     ? DEVA_VOWEL_INDEP_LT[f->vowel]
+                                     : DEVA_VOWEL_INDEP[f->vowel];
+            if (m || v)
+                n = deva_push(out, n, DEVA_OP_VOWEL, m, v);
+        }
+    }
+
+    /* --- RS↑: anusvara ↔ chandrabindu / RS→: 長母音への昇格 --- */
+    if (f->rsUpNow && !s->prevRsUp)
+        n = deva_push(out, n, DEVA_OP_ANUSVARA, 0, 0);
+    if (f->rsRightNow && !s->prevRsRight)
+        n = deva_push(out, n, DEVA_OP_LONG, 0, 0);
+
+    /* --- RT を離した: 何にも使われていなければ halant --- */
+    if (!f->rtNow && s->prevRT) {
+        if (!s->rtUsedForCursor)
+            n = deva_push(out, n, DEVA_OP_HALANT, 0, 0);
+        s->rtUsedForCursor = 0;
+    }
+    return n;
+}
+
+void gp_sync_prev_deva(DevaMachine *s, const GpFrameDeva *f)
+{
+    s->prevLsDir = f->lsDir;
+    s->prevDpad = f->dpad;
+    s->prevLb = f->lbNow;
+    s->prevVowel = f->vowel;
+    s->prevLT = f->ltNow;
+    s->prevRT = f->rtNow;
+    s->prevL3 = f->l3Now;
+    s->prevRsUp = f->rsUpNow;
+    s->prevRsRight = f->rsRightNow;
 }
