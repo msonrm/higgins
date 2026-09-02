@@ -2,6 +2,7 @@
 """ELIZA スクリプトから「切り出せなければならない語」を集めて native/vocab.h に焼く。
 
     python3 tools/gen_vocab.py doctor/ja.txt native/vocab.h
+    python3 tools/gen_vocab.py doctor/ko.txt native/vocab_ko.h VOCAB_KO
 
 ★**語彙を集める規則は tools/wakachi.py（collect_vocab）が唯一の正典**で、
   ここはその出力を C の表にするだけ —— 規則そのものを C へ移植すると、
@@ -24,9 +25,11 @@ from wakachi import collect_vocab
 
 
 def main():
-    if len(sys.argv) != 3:
+    if len(sys.argv) not in (3, 4):
         sys.exit(__doc__)
     script_path, out_path = sys.argv[1], sys.argv[2]
+    # ★言語ごとに別の表を焼くので、名前は引数で受ける（既定 = 日本語の VOCAB）。
+    name = sys.argv[3] if len(sys.argv) == 4 else "VOCAB"
 
     forms = parse(tokenize(io.open(script_path, encoding="utf-8").read()))
     # ★forms[0] は挨拶（hello_message）。照合には使われないので語彙に入れない
@@ -49,24 +52,24 @@ def main():
     lines = [
         f"/* tools/gen_vocab.py が {os.path.basename(script_path)} から生成。手で編集しない。",
         " * 語彙を集める規則の正典は tools/wakachi.py の collect_vocab。 */",
-        "#ifndef HG_VOCAB_H",
-        "#define HG_VOCAB_H",
+        f"#ifndef HG_{name}_H",
+        f"#define HG_{name}_H",
         "",
-        "static const unsigned short VOCAB_POOL[] = {",
+        f"static const unsigned short {name}_POOL[] = {{",
     ]
     for i in range(0, len(pool), 12):
         lines.append("    " + " ".join(f"0x{c:04X}," for c in pool[i:i + 12]))
     lines += [
         "};",
         "",
-        "static const struct { unsigned short off, len; } VOCAB[] = {",
+        f"static const struct {{ unsigned short off, len; }} {name}[] = {{",
     ]
     for off, ln in items:
         lines.append(f"    {{ {off}, {ln} }},")
     lines += [
         "};",
         "",
-        f"enum {{ VOCAB_N = {len(items)}, VOCAB_MAXLEN = {maxlen} }};",
+        f"enum {{ {name}_N = {len(items)}, {name}_MAXLEN = {maxlen} }};",
         "",
         "#endif",
         "",

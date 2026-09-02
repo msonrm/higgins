@@ -132,6 +132,8 @@ test-api:
 #   走らせる（native/test_reply）。
 #   ★これが段階 B の芯 —— wakachi / tsunagi は Python・JS・C の **3 実装**になったので、
 #   片方の経路でしか通らない値は、もう片方で必ず落ちる。3 つをここで縛る。
+#   ★★**韓国語も同じ縛りに入れる**（josa / tsunagi_ko は Python と C の 2 実装）。
+#      規則の表は Python から焼くので（tools/gen_josa.py）、ずれるとしたら手順の側。
 #   ※ SDL / FreeType が無い環境では飛ばす（1 つのシェルで書くこと ―― make は行ごとに
 #      別シェルなので、`|| exit 0` では次の行が止まらない）。
 test-native:
@@ -145,7 +147,12 @@ test-native:
 	      || { echo 'FAIL: native 版が CLI 版と違う応答を返す'; \
 	           grep -v '^$$' experiments/ja_doctor.out | diff -u - $(BUILD)/native.out | head -20; \
 	           exit 1; }; \
-	    echo 'OK: native 版と CLI 版の応答が一致'; \
+	    ./native/test_reply ko < experiments/ko_doctor.in | grep -v '^$$' > $(BUILD)/native-ko.out; \
+	    grep -v '^$$' experiments/ko_doctor.out | diff -u - $(BUILD)/native-ko.out > /dev/null \
+	      || { echo 'FAIL: native の韓国語が CLI 版と違う応答を返す'; \
+	           grep -v '^$$' experiments/ko_doctor.out | diff -u - $(BUILD)/native-ko.out | head -20; \
+	           exit 1; }; \
+	    echo 'OK: native 版と CLI 版の応答が一致（日本語・韓国語）'; \
 	fi
 
 clean:
