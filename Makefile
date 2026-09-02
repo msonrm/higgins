@@ -155,11 +155,11 @@ test-native:
 	      || { echo 'FAIL: native の韓国語が CLI 版と違う応答を返す'; \
 	           grep -v '^$$' experiments/ko_doctor.out | diff -u - $(BUILD)/native-ko.out | head -20; \
 	           exit 1; }; \
-	    ./native/test_input > $(BUILD)/ko-input.out; \
-	    diff -u experiments/ko_input.out $(BUILD)/ko-input.out > /dev/null \
-	      || { echo 'FAIL: 韓国語の入力（合成）が期待と違う'; \
-	           diff -u experiments/ko_input.out $(BUILD)/ko-input.out | head -20; exit 1; }; \
-	    echo 'OK: native 版と CLI 版の応答が一致（日本語・韓国語）/ 韓国語の合成も一致'; \
+	    ./native/test_input > $(BUILD)/input.out; \
+	    diff -u experiments/input.out $(BUILD)/input.out > /dev/null \
+	      || { echo 'FAIL: 入力（合成）が期待と違う'; \
+	           diff -u experiments/input.out $(BUILD)/input.out | head -20; exit 1; }; \
+	    echo 'OK: native 版と CLI 版の応答が一致（日本語・韓国語）/ 合成も一致（韓国語・デーヴァナーガリー）'; \
 	fi
 
 clean:

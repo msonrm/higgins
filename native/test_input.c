@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include "input.h"
+#include "devanagari.h"
 #include "korean.h"
 #include "text.h"
 
@@ -203,6 +204,101 @@ int main(void)
             buf[len - rep] = ch, len += 1 - rep;
         printf("--- 複合母音（rs→）---\n");
         show("  오 → ", buf, len);
+    }
+
+    /* ---- デーヴァナーガリーの合成 ----
+     *
+     * ★上流（DevanagariComposer.swift）に**検査が無い**ので、期待値は実装を追って
+     *   書いた。★それだけだと「書いた本人が採点する」ので、**実際の単語で裏を取る**
+     *   —— 音韻として正しいかは、出た並びが語として読めるかで分かる。
+     */
+    {
+        Deva d;
+        uint16_t buf[16];
+        int len = 0;
+
+        /* 出た字を積む。★replace は「直前の何字を差し替えるか」。 */
+        #define EMIT(call) do { \
+            DevaOut o = (call); \
+            if (o.ok) { \
+                len -= o.replace; \
+                if (len < 0) len = 0; \
+                for (int q = 0; q < o.len; q++) buf[len++] = o.text[q]; \
+            } \
+        } while (0)
+
+        printf("--- デーヴァナーガリー: matra は子音の後 ---\n");
+        deva_init(&d); len = 0;
+        EMIT(deva_consonant(&d, 0x0915));         /* क */
+        EMIT(deva_matra(&d, 0x093F));             /* ि */
+        show("  क + ि → ", buf, len);            /* कि = ki */
+
+        printf("--- ★auto-conjunct しない（नम が न्म にならない）---\n");
+        deva_init(&d); len = 0;
+        EMIT(deva_consonant(&d, 0x0928));         /* न */
+        EMIT(deva_consonant(&d, 0x092E));         /* म */
+        show("  न + म → ", buf, len);            /* नम = nama（namaste の頭） */
+
+        printf("--- conjunct は halant を明示して作る ---\n");
+        deva_init(&d); len = 0;
+        EMIT(deva_consonant(&d, 0x0915));         /* क */
+        EMIT(deva_halant(&d));                    /* ् */
+        EMIT(deva_consonant(&d, 0x0937));         /* ष */
+        show("  क + ् + ष → ", buf, len);       /* क्ष = kṣa */
+
+        printf("--- 長母音への昇格（rs→）---\n");
+        deva_init(&d); len = 0;
+        EMIT(deva_consonant(&d, 0x0915));
+        EMIT(deva_long_shift(&d));                /* inherent schwa → ा */
+        show("  क + rs→ → ", buf, len);          /* का = kā */
+        deva_init(&d); len = 0;
+        EMIT(deva_consonant(&d, 0x0915));
+        EMIT(deva_matra(&d, 0x093F));             /* ि */
+        EMIT(deva_long_shift(&d));                /* ि → ी（置換） */
+        show("  कि + rs→ → ", buf, len);        /* की = kī */
+
+        printf("--- anusvara ↔ chandrabindu のトグル（rs↑）---\n");
+        deva_init(&d); len = 0;
+        EMIT(deva_consonant(&d, 0x0915));
+        EMIT(deva_toggle_anusvara(&d));
+        show("  1 回 → ", buf, len);              /* कं */
+        EMIT(deva_toggle_anusvara(&d));
+        show("  2 回 → ", buf, len);              /* कँ */
+        EMIT(deva_toggle_anusvara(&d));
+        show("  3 回 → ", buf, len);              /* क（一周して外れる） */
+
+        printf("--- nukta は重ね押しできない ---\n");
+        deva_init(&d); len = 0;
+        EMIT(deva_consonant(&d, 0x0915));
+        EMIT(deva_nukta(&d));
+        show("  क + nukta → ", buf, len);        /* क़ */
+        EMIT(deva_nukta(&d));                     /* ★2 回目は no-op */
+        show("  もう一度 → ", buf, len);          /* 変わらない */
+
+        printf("--- ★子音が無ければ matra は入らない（呼ぶ側が独立母音へ落とす）---\n");
+        deva_init(&d); len = 0;
+        {
+            DevaOut o = deva_matra(&d, 0x093F);
+            printf("  matra 単独: ok=%d（0 なら独立母音へ）\n", o.ok);
+            EMIT(deva_vowel(&d, 0x0907));         /* इ */
+        }
+        show("  → ", buf, len);                   /* इ */
+
+        printf("--- 実際の語で裏を取る ---\n");
+        deva_init(&d); len = 0;
+        EMIT(deva_consonant(&d, 0x092E));         /* म */
+        EMIT(deva_matra(&d, 0x0941));             /* ु */
+        EMIT(deva_consonant(&d, 0x091D));         /* झ */
+        EMIT(deva_matra(&d, 0x0947));             /* े */
+        show("  मुझे（私に）→ ", buf, len);
+
+        deva_init(&d); len = 0;
+        EMIT(deva_consonant(&d, 0x0939));         /* ह */
+        EMIT(deva_matra(&d, 0x0942));             /* ू */
+        EMIT(deva_toggle_anusvara(&d));           /* ं */
+        EMIT(deva_toggle_anusvara(&d));           /* → ँ */
+        show("  हूँ（です・1 人称）→ ", buf, len);
+        #undef EMIT
     }
     return 0;
 }
