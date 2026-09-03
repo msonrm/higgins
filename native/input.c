@@ -420,6 +420,17 @@ int gp_resolve_dakuten(const unsigned short *tail, int n, unsigned short out[2],
  *   ★**何にも使われずに離されたときだけ** halant になる。
  *   その判定（rtUsedForCursor）は**ここが持つ**が、カーソル移動と改行そのものは
  *   席に依存しない操作なので main.c が持つ（呼んだら deva_consume_rt を呼ぶこと）。
+ *
+ * ★★**varga の latch は「前置シフト」** —— 左手側の出力（D-pad の子音 / LB の鼻音）を
+ *   1 つ出したら **latch は中立（प varga）へ戻る**。次の子音は再度 LS を倒して指定する。
+ *   ★**押しっぱなしにできないから latch なのであって、モードではない**（左親指で
+ *     LS と D-pad を同時に操作できない、という物理制約から来ている）。
+ *   ★★**移植で 2026-09-03 までこの消費が落ちていた** —— GIME は Swift も Kotlin も
+ *     子音 emission と鼻音 emission の 2 か所で `devaLsDir = .neutral` を書いている。
+ *     ★しかも `test_input.c` に「latch は残る」というゴールデンを**実装を追って**
+ *     書いてしまっていたので、**差が仕様として固定され、検査は緑のままだった**。
+ *   ★`prevLsDir` は触らない（GIME と同じ）—— 同方向へ latch し直すには、
+ *     一度 LS を中立へ戻してから倒す。L3 が latch を落とすのも同じ形。
  */
 #include "devanagari_tables.h"
 
@@ -522,11 +533,14 @@ int gp_step_deva(DevaMachine *s, const GpFrameDeva *f, GpAction out[4])
             c = DEVA_VARGA[varga_of(s->lsLatch)][f->dpad];
         }
         n = deva_push(out, n, DEVA_OP_CONSONANT, c, 0);
+        s->lsLatch = 0;                /* ★前置シフト（下の注記）。非 varga でも消す */
     }
 
     /* --- LB: その varga の鼻音。★非 varga 層とは独立（GIME の注記）--- */
-    if (f->lbNow && !s->prevLb)
+    if (f->lbNow && !s->prevLb) {
         n = deva_push(out, n, DEVA_OP_CONSONANT, DEVA_VARGA[varga_of(s->lsLatch)][4], 0);
+        s->lsLatch = 0;                /* ★前置シフト（下の注記） */
+    }
 
     /* --- 面ボタン（RB を含む 0..4）: 母音。
            ★matra と独立母音の**両方**を渡す —— どちらになるかは合成器が決める。
