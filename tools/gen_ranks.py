@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ヒンディー語 DOCTOR の**キーワードと rank の一覧**を出す。
+"""DOCTOR スクリプトの**キーワードと rank の一覧**を出す（言語を問わない）。
 
 ★★**この台を作った理由**（2026-09-03）: rank を一括で書き換える正規表現が、
 意図した範囲の外（`हमेशा` / `अक्सर` / `हरबार`）まで **1 → 3 に上げていた**。
@@ -10,8 +10,12 @@
 → ★**rank は「効いていること」ではなく「値そのもの」を縛る。**
 `experiments/hi_ranks.txt` と突き合わせれば、意図しない rank の変化が必ず表に出る。
 
-  python3 tools/gen_hi_ranks.py doctor/hi.txt        # 一覧を出す
-  python3 tools/gen_hi_ranks.py doctor/hi.txt --check experiments/hi_ranks.txt
+  python3 tools/gen_ranks.py doctor/hi.txt        # 一覧を出す
+  python3 tools/gen_ranks.py doctor/hi.txt --check experiments/hi_ranks.txt
+
+★**3 言語とも同じ台に載せた**（2026-09-03）—— もとはヒンディー語専用だったが、
+日本語・韓国語にも同じ穴がある（rank は目で見えない）。★道具が言語を知らないので、
+言語を足しても Makefile に 1 行足すだけで済む。
 """
 
 import io
@@ -49,7 +53,7 @@ def main():
         for k in sorted(set(w) | set(g)):
             if w.get(k) != g.get(k):
                 print("  %-14s 基準 %-4s → いま %s" % (k, w.get(k, "（無し）"), g.get(k, "（無し）")))
-        print("  ★意図した変更なら: python3 tools/gen_hi_ranks.py %s > %s" % (path, ref))
+        print("  ★意図した変更なら: python3 tools/gen_ranks.py %s > %s" % (path, ref))
         return 1
     print("\n".join(got))
     return 0
