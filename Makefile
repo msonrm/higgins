@@ -7,7 +7,7 @@ CXXFLAGS ?= -std=c++20 -O1 -w
 BUILD     := build
 ELIZA_SRC := vendor/eliza/src/eliza.cpp
 
-.PHONY: all test test-ja test-ja-doctor test-ja-alias test-ko-doctor test-ko-coverage test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-ja-ranks test-ko-ranks test-ja-words test-web test-api test-native clean
+.PHONY: all test test-ja test-ja-doctor test-ja-alias test-ja-coverage test-ko-doctor test-ko-coverage test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-ja-ranks test-ko-ranks test-ja-words test-web test-api test-native clean
 
 all: $(BUILD)/eliza
 
@@ -20,7 +20,7 @@ $(BUILD)/eliza: $(ELIZA_SRC)
 #   そこで 2 つ焼いて、両方の結果が揃ってはじめて緑とする:
 #     eliza-count  … 本番と同じロジック + 件数表示   → 「1 件以上あって 0 失敗」
 #     eliza-canary … それにわざと落ちるテストを 1 個 → 「1 失敗」（検査が生きている証拠）
-test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-ko-doctor test-ko-coverage test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-ja-words test-ja-ranks test-ko-ranks test-web test-api test-native
+test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-ja-coverage test-ko-doctor test-ko-coverage test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-ja-words test-ja-ranks test-ko-ranks test-web test-api test-native
 	@printf '\n' | $(BUILD)/eliza-count | grep -qE '[1-9][0-9]* assertions' \
 	  || { echo 'FAIL: テストが 1 件も走っていない'; exit 1; }
 	@printf '\n' | $(BUILD)/eliza-count | grep -q '0 failures' \
@@ -105,6 +105,12 @@ test-ko-doctor: $(BUILD)/eliza
 #   ★実際に 8 件（제가 / 내가 の 4 形ずつ）を初回で掘り当てた。
 test-ko-coverage: $(BUILD)/eliza
 	@python3 tools/coverage_ko.py doctor/ko.txt
+
+# ★★**日本語にも同じ被覆検査を敷いた**（2026-09-03）。★韓国語・ヒンディー語には
+#   前からあったのに**日本語だけ無かった** —— 2026-09-01 に 13 件直したときは
+#   手で数えたので、**同じ穴がもう一度開いても誰も気づかない**状態だった。
+test-ja-coverage: $(BUILD)/eliza
+	@python3 tools/coverage_ja.py doctor/ja.txt
 
 # ★ヒンディー語 DOCTOR のゴールデン。hindi_in（danda を `.` に写す / nukta を分解形へ）
 #   → eliza。★★**出口が無い** —— 日本語の tsunagi は「空白を消す」、韓国語の
