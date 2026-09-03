@@ -7,7 +7,7 @@ CXXFLAGS ?= -std=c++20 -O1 -w
 BUILD     := build
 ELIZA_SRC := vendor/eliza/src/eliza.cpp
 
-.PHONY: all test test-ja test-ja-doctor test-ja-alias test-ko-doctor test-ko-coverage test-hi-doctor test-hi-coverage test-hi-gender test-web test-api test-native clean
+.PHONY: all test test-ja test-ja-doctor test-ja-alias test-ko-doctor test-ko-coverage test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-web test-api test-native clean
 
 all: $(BUILD)/eliza
 
@@ -20,7 +20,7 @@ $(BUILD)/eliza: $(ELIZA_SRC)
 #   そこで 2 つ焼いて、両方の結果が揃ってはじめて緑とする:
 #     eliza-count  … 本番と同じロジック + 件数表示   → 「1 件以上あって 0 失敗」
 #     eliza-canary … それにわざと落ちるテストを 1 個 → 「1 失敗」（検査が生きている証拠）
-test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-ko-doctor test-ko-coverage test-hi-doctor test-hi-coverage test-hi-gender test-web test-api test-native
+test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-ko-doctor test-ko-coverage test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-web test-api test-native
 	@printf '\n' | $(BUILD)/eliza-count | grep -qE '[1-9][0-9]* assertions' \
 	  || { echo 'FAIL: テストが 1 件も走っていない'; exit 1; }
 	@printf '\n' | $(BUILD)/eliza-count | grep -q '0 failures' \
@@ -122,6 +122,16 @@ test-hi-doctor: $(BUILD)/eliza
 #   NONE が**正しい**ので、混ぜると本物の穴が雑音に埋もれる。分けて数える。
 test-hi-coverage: $(BUILD)/eliza
 	@python3 tools/coverage_hi.py doctor/hi.txt
+
+# ★★**rank（キーワードの優先度）の値そのものを縛る。**
+#   ★実際に踏んだ（2026-09-03）: rank を一括で書き換える正規表現が、意図した範囲の外
+#   （`हमेशा` / `अक्सर`）まで **1 → 3 に上げていた**。すると `माँ`(2) や `डर`(3) が
+#   「いつも」に負け、**応答が静かに入れ替わる** —— 例外も警告も出ず、返る文は
+#   どれも文法的に正しいので目では分からない。★応答のゴールデンも
+#   **その組み合わせを踏んでいなかった**ので緑のままだった。
+#   → 「効いていること」ではなく**値そのもの**を縛る。
+test-hi-ranks:
+	@python3 tools/gen_hi_ranks.py doctor/hi.txt --check experiments/hi_ranks.txt
 
 # ★★**DOCTOR の性別**（ヒンディー語は 1 人称の動詞が話者の性で変わる）。
 #   `doctor/hi.txt` は**男性に決め打っている**。★はじめは「与格・非人称で避ける」方針で
