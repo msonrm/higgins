@@ -74,6 +74,8 @@ typedef struct {
 /* デーヴァナーガリーの状態。★かなの GpMachine とは別に持つ（席ごとに分ける方針）。
    ★lsLatch は**押しっぱなしではなく latch** —— 左親指で LS と D-pad を同時に
      操作できない物理制約から来ている（GIME の実機判断）。同方向へもう一度で中立。
+   ★★**そして latch は「前置シフト」** —— 左手側の出力（D-pad 子音 / LB 鼻音）を
+     1 つ出したら中立へ戻る。**モードではない**（gp_step_deva の頭書き）。
    ★rtUsedForCursor: RT は「修飾の入口」で、**何にも使われずに離されたときだけ**
      halant になる（RT+LS のキャレット移動や RT+L3 の改行に使われたら抑止）。 */
 typedef struct {
