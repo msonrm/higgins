@@ -76,7 +76,8 @@ test-ja-alias: $(BUILD)/eliza
 	  | diff -u experiments/ja_alias.out - > /dev/null \
 	  || { echo 'FAIL: 別名ゴールデンが一致しない'; exit 1; }
 	@if pkg-config --exists sdl2 freetype2 2>/dev/null; then \
-	    sh native/build.sh > /dev/null; \
+	    sh native/build.sh > /dev/null \
+	      || { echo 'FAIL: native のビルドが通らない'; sh native/build.sh; exit 1; }; \
 	    ./native/test_reply < experiments/ja_alias.in | grep -v '^$$' > $(BUILD)/alias-native.out; \
 	    grep -v '^$$' experiments/ja_alias.out | diff -u - $(BUILD)/alias-native.out > /dev/null \
 	      || { echo 'FAIL: native が CLI と違う = 組み込みの英語メッセージが出ている疑い'; \
@@ -181,12 +182,17 @@ test-api:
 #      焼いていない（nukta 8 字を両方に手で書いた）ので、**ずれるとしたら表の側**。
 #   ※ SDL / FreeType が無い環境では飛ばす（1 つのシェルで書くこと ―― make は行ごとに
 #      別シェルなので、`|| exit 0` では次の行が止まらない）。
+#   ★★**ビルドの失敗で止める**（2026-09-03 に踏んだ）—— 前は `sh native/build.sh > /dev/null;`
+#      と書いていたので、**ビルドが落ちても古いバイナリで検査が走っていた**。
+#      しかも赤くはなるので、「C と Python がずれた」と読み違える（実際に読み違えた）。
+#      ★出力を捨てるなら、**捨てた先が失敗していないか**を必ず見ること。
 test-native:
 	@if ! pkg-config --exists sdl2 freetype2 2>/dev/null; then \
 	    echo 'SKIP: sdl2 / freetype2 が無い'; \
 	else \
 	    mkdir -p $(BUILD); \
-	    sh native/build.sh > /dev/null; \
+	    sh native/build.sh > /dev/null \
+	      || { echo 'FAIL: native のビルドが通らない'; sh native/build.sh; exit 1; }; \
 	    ./native/test_reply < experiments/ja_doctor.in | grep -v '^$$' > $(BUILD)/native.out; \
 	    grep -v '^$$' experiments/ja_doctor.out | diff -u - $(BUILD)/native.out > /dev/null \
 	      || { echo 'FAIL: native 版が CLI 版と違う応答を返す'; \
