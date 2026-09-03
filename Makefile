@@ -7,7 +7,7 @@ CXXFLAGS ?= -std=c++20 -O1 -w
 BUILD     := build
 ELIZA_SRC := vendor/eliza/src/eliza.cpp
 
-.PHONY: all test test-ja test-ja-doctor test-ja-alias test-ko-doctor test-ko-coverage test-hi-doctor test-hi-coverage test-web test-api test-native clean
+.PHONY: all test test-ja test-ja-doctor test-ja-alias test-ko-doctor test-ko-coverage test-hi-doctor test-hi-coverage test-hi-gender test-web test-api test-native clean
 
 all: $(BUILD)/eliza
 
@@ -20,7 +20,7 @@ $(BUILD)/eliza: $(ELIZA_SRC)
 #   そこで 2 つ焼いて、両方の結果が揃ってはじめて緑とする:
 #     eliza-count  … 本番と同じロジック + 件数表示   → 「1 件以上あって 0 失敗」
 #     eliza-canary … それにわざと落ちるテストを 1 個 → 「1 失敗」（検査が生きている証拠）
-test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-ko-doctor test-ko-coverage test-hi-doctor test-hi-coverage test-web test-api test-native
+test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-ko-doctor test-ko-coverage test-hi-doctor test-hi-coverage test-hi-gender test-web test-api test-native
 	@printf '\n' | $(BUILD)/eliza-count | grep -qE '[1-9][0-9]* assertions' \
 	  || { echo 'FAIL: テストが 1 件も走っていない'; exit 1; }
 	@printf '\n' | $(BUILD)/eliza-count | grep -q '0 failures' \
@@ -122,6 +122,18 @@ test-hi-doctor: $(BUILD)/eliza
 #   NONE が**正しい**ので、混ぜると本物の穴が雑音に埋もれる。分けて数える。
 test-hi-coverage: $(BUILD)/eliza
 	@python3 tools/coverage_hi.py doctor/hi.txt
+
+# ★★**DOCTOR の性別**（ヒンディー語は 1 人称の動詞が話者の性で変わる）。
+#   `doctor/hi.txt` は**男性に決め打っている**。★はじめは「与格・非人称で避ける」方針で
+#   書いたが、**方針を書いただけで検査を付けなかったので 2 か所で静かに漏れていた** ——
+#   ★方針は検査が無ければ必ず崩れる。
+#   ★見るのは「`मैं` の後ろに来る動詞」だけ。女性形そのものは禁じない
+#     （「क्या यह याद बार-बार आती है」の `आती` は女性名詞 याद に一致している）。
+test-hi-gender: 
+	@python3 tools/check_hi_gender.py doctor/hi.txt > /dev/null \
+	  || { echo 'FAIL: DOCTOR の 1 人称に女性形が混ざっている'; \
+	       python3 tools/check_hi_gender.py doctor/hi.txt; exit 1; }
+	@echo 'OK: DOCTOR の 1 人称はすべて男性形'
 
 # ★web/ の JS 3 本を Node で動かし、C++ 版と同じ応答が出るかを見る。
 #   ブラウザを開かずに Web 版の回帰を守るため。★独立した 2 実装が一致することは
