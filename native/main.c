@@ -403,11 +403,24 @@ static int focus_x = MARGIN, focus_y;
 enum { ISHAPE_N = COMP_MAX * 3 };      /* draw_input が受ける最大（変換中の t[]） */
 static Shaped ishape[ISHAPE_N];
 static int ishape_n;
+/* ★整形の**元になった並び**。`ishape[i].cluster` はここへの添字なので、
+   割り付け（box_layout）が「この画はどの字から来たか」を引くのに要る。
+   ★**shape_input が覚える**（呼ぶ側に持たせない）—— 別の文字列を渡されたら
+     cluster の指す先がずれて、**黙って違う字で折る**。 */
+static const uint16_t *ishape_src;
 
 static int shape_input(const uint16_t *s, int n)
 {
+    ishape_src = s;
     ishape_n = shape_run(s, n, ishape, ISHAPE_N);
     return ishape_n;
+}
+
+/* この画の元の字。★禁則や語の判定は**グリフ番号ではなく元の code** で行う
+   （面ごとの通し番号に「語を作る字か」を尋ねても答えない。render.c と同じ理由）。 */
+static uint16_t ishape_ch(int i)
+{
+    return ishape_src[ishape[i].cluster];
 }
 
 /* 論理の位置（何字目か）→ 整形した並びでの位置（何グリフ目か）。
@@ -423,22 +436,50 @@ static int glyph_at(int logical)
 
 /* 折返して各行の開始位置を出す。戻り値 = 行数（必ず 1 以上）。
    ★**start[] は整形した並びでの位置**（何グリフ目か）。論理の位置が要るところは
-     `ishape[k].cluster` を引くこと。 */
+     `ishape[k].cluster` を引くこと。
+
+   ★★**語は行の途中で割らない**（`render.h` の `word_char`）。★**規則は借りる** ——
+     本文（render.c）と欄でここが違うと、**同じ文が送る前と後で違う折れ方をする**。
+     ★借りずに書き写すと規則の 3 つ目の実装になり、必ずずれる（上流に口を開けてある）。
+   ★**日本語の席は 1 画も変わらない** —— かな・漢字は語を作らないので、
+     この分岐は英語・韓国語・デーヴァナーガリーの欄でだけ効く。
+   ★**欄より長い語は語では折れない**（`w <= x1 - BOX_X0` の門）。その語は
+     下の 1 画ずつに落ちて、これまでどおり途中で割れる —— 割らないと入らない。
+   ★折り返し直後の空白は**捨てない**（render.c は捨てる）。欄にはキャレットが
+     居るので、**絵から消すとそこへ置けなくなる**。語で折ると空白は前の行の末尾に
+     残るので、行頭に空く場面はそもそも減る。 */
 static int box_layout(int m, int *start)
 {
     int nl = 0;
     start[nl++] = 0;
     int x = BOX_X0;
     const int x1 = box_x1();
-    for (int i = 0; i < m; i++) {
-        const int w = ishape[i].adv;
-        if (x + w > x1) {
-            if (nl >= BOX_LINES)
-                break;
-            start[nl++] = i;
-            x = BOX_X0;
+    int i = 0;
+    while (i < m) {
+        int j = i, w = 0;
+        if (word_char(ishape_ch(i))) {
+            while (j < m && word_char(ishape_ch(j)))
+                w += ishape[j++].adv;
+            /* 語ごと次の行へ送れるなら送る（render.c の push_text と同じ条件） */
+            if (w <= x1 - BOX_X0 && x + w > x1 && x > BOX_X0) {
+                if (nl >= BOX_LINES)
+                    return nl;
+                start[nl++] = i;
+                x = BOX_X0;
+            }
+        } else {
+            j = i + 1;                 /* 語を作らない字は 1 画ずつ */
         }
-        x += w;
+        for (; i < j; i++) {
+            const int gw = ishape[i].adv;
+            if (x + gw > x1) {
+                if (nl >= BOX_LINES)
+                    return nl;
+                start[nl++] = i;
+                x = BOX_X0;
+            }
+            x += gw;
+        }
     }
     return nl;
 }
