@@ -155,6 +155,34 @@ static const Step S_DANGSIN_DPAD[] = {
     REL(380),
 };
 
+/* ★★**RT があとから着いても `이` になる**（2026-09-04・実機の指摘）。
+   RT は母音の**層の切替**（ㅡ→ㅣ）なので、面ボタンを押したままなら同じ音節を
+   差し替えるのが筋。★これが無いと `으` が出たまま作り直されず、RT を離したところで
+   「単押し」と見なされて **ㅣ が足され `의`** になっていた
+   （実機:「RT と RB の同時押しが `이` になりにくく `의` になりがち」）。
+   ★**離したときは作り直さない** —— 指を離す順は自由であってほしいので、
+     `이` を押さえたまま RT を先に離しても `으` へ戻らない（下の 4 番目）。 */
+static const Step S_I_SIMUL[]   = { { 0, 0, 0, 1, 0, 1, 0 }, REL(60) };
+static const Step S_I_RB_FIRST[] = { { 0, 0, 0, 1, 0, 0, 0 },
+                                     { 20, 0, 0, 1, 0, 1, 0 }, REL(60) };
+static const Step S_I_RT_FIRST[] = { { 0, 0, -1, 0, 0, 1, 0 },
+                                     { 20, 0, 0, 1, 0, 1, 0 }, REL(60) };
+static const Step S_I_RT_OFF[]   = { { 0, 0, 0, 1, 0, 1, 0 },
+                                     { 40, 0, 0, 1, 0, 0, 0 }, REL(60) };
+
+/* ★★**RT を押しながらの母音に、ㅣ が余計に足されていた**（2026-09-04）。
+   ★下の `여` は RT + □ = `ㅕ`。★直す前は **`예`**（ㅕ + ㅣ）になっていた ——
+     母音の処理が立てた「RT を使った」を、**押下エッジのリセットが後ろから
+     打ち消していた**ので、離したときに「単押しだった」と見なされていた。
+   ★★**ずっと壊れていたが、`ㅣ + ㅣ` や `ㅛ + ㅣ` が成立しない**ぶん、母音によっては
+     表に出なかった（`이` `요` は無事に見えた）。★**症状の一致 ≠ 正しさ**。
+   ★機能そのもの（RT 単押しの ㅣ 付加）は生きている —— `S_OI` がそれを見る。 */
+static const Step S_YEO[]     = { { 0, 0, 1, 1, 0, 1, 0 }, REL(60) };
+static const Step S_YEO_LATE[] = { { 0, 0, 1, 1, 0, 0, 0 },
+                                   { 20, 0, 1, 1, 0, 1, 0 }, REL(60) };
+static const Step S_OI[]      = { { 0, 0, 2, 1, 0, 0, 0 }, REL(60),
+                                  { 100, 0, -1, 0, 0, 1, 0 }, REL(140) };
+
 static const Scene SCENES[] = {
     { "안녕",             S_ANNYEONG, (int)(sizeof S_ANNYEONG / sizeof *S_ANNYEONG) },
     { "한국",             S_HANGUK,   (int)(sizeof S_HANGUK / sizeof *S_HANGUK) },
@@ -163,6 +191,13 @@ static const Scene SCENES[] = {
     { "받침の付け直し",   S_REDO,     (int)(sizeof S_REDO / sizeof *S_REDO) },
     { "★당신（LB が先）", S_DANGSIN_LB,   (int)(sizeof S_DANGSIN_LB / sizeof *S_DANGSIN_LB) },
     { "★당신（十字が先）", S_DANGSIN_DPAD, (int)(sizeof S_DANGSIN_DPAD / sizeof *S_DANGSIN_DPAD) },
+    { "★이（同時）",        S_I_SIMUL,    (int)(sizeof S_I_SIMUL / sizeof *S_I_SIMUL) },
+    { "★이（RB が先）",     S_I_RB_FIRST, (int)(sizeof S_I_RB_FIRST / sizeof *S_I_RB_FIRST) },
+    { "★이（RT が先）",     S_I_RT_FIRST, (int)(sizeof S_I_RT_FIRST / sizeof *S_I_RT_FIRST) },
+    { "★이（RT を先に離す）", S_I_RT_OFF, (int)(sizeof S_I_RT_OFF / sizeof *S_I_RT_OFF) },
+    { "★여（RT + □）",      S_YEO,      (int)(sizeof S_YEO / sizeof *S_YEO) },
+    { "★여（□ が先）",       S_YEO_LATE, (int)(sizeof S_YEO_LATE / sizeof *S_YEO_LATE) },
+    { "★외（RT 単押しの ㅣ 付加）", S_OI, (int)(sizeof S_OI / sizeof *S_OI) },
     { "巻き戻し 마마",    S_MAMA,     (int)(sizeof S_MAMA / sizeof *S_MAMA) },
     { "겹받침も戻す 우울하", S_UUL,   (int)(sizeof S_UUL / sizeof *S_UUL) },
     { "겹받침は残す 앉자", S_ANJJA,   (int)(sizeof S_ANJJA / sizeof *S_ANJJA) },
