@@ -43,8 +43,16 @@ import unicodedata
 # 合成形 → 分解形。★8 字だけなので表で持つ（C 版 native/hindi.c と対）。
 NUKTA = {chr(c): unicodedata.normalize("NFD", chr(c)) for c in range(0x0958, 0x0960)}
 
-# 文の切れ目。★ELIZA の delimiters_ は {",", ".", "BUT"} 固定なので `.` に寄せる。
+# 文の切れ目。★ELIZA の delimiters_ は **{",", ".", "BUT"} 固定**（スクリプトから
+#   増やす入口が無い）ので、そこへ寄せる。
 DANDA = {"।": ".", "॥": "."}
+
+# ★★**`लेकिन`（しかし）は原典の `BUT` にあたる。** 原典は BUT を節の切れ目に
+#   しているので（「I AM SAD BUT MY MOTHER IS HAPPY」→ 前半だけ残って
+#   「I AM SORRY TO HEAR YOU ARE SAD」）、ヒンディー語でも同じ働きをさせる。
+#   ★写さないと**後半の家族語が勝って、悲しみの告白が素通りする**（実測 2026-09-03）。
+# ★`पर` は入れない —— 後置詞の「〜の上に」と同じ形なので、切ると別の文が壊れる。
+BUT = {"लेकिन": ",", "मगर": ","}
 
 
 def hindi_in(s):
@@ -52,7 +60,8 @@ def hindi_in(s):
         s = s.replace(a, b)
     for a, b in DANDA.items():
         s = s.replace(a, b)
-    return " ".join(s.split())
+    # ★語として独立しているときだけ写す（`लेकिनवाला` のような語中は触らない）
+    return " ".join(BUT.get(w, w) for w in s.split())
 
 
 def main():
