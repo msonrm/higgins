@@ -260,16 +260,31 @@ static int step_korean(GpMachine *s, const GpFrameKana *f, GpAction out[4])
         const int nucleus = f->rtNow ? KO_NUCLEUS_SHIFTED[v] : KO_NUCLEUS_BASE[v];
         const int rowChanged = f->row != s->prevRow;
         const int vowelChanged = f->vowel != s->prevVowelIndex;
+        /* ★★**RT が「あとから」着いたときも作り直す**（2026-09-04・実機の指摘）。
+           ★RT は母音の**層の切替**（ㅡ→ㅣ / ㅓ→ㅔ / ㅗ→ㅛ …）なので、
+             面ボタンを押したままなら**同じ音節を差し替える**のが筋。
+           ★★これが無いと、**RB が先・RT が後**のときに `으` が出たまま作り直されず、
+             RT を離したところで「単押し」と見なされて **ㅣ が足され `의`** になる
+             ―― 実機で「RT と RB の同時押しが `이` になりにくい」と言われた形。
+           ★**離したときは作り直さない** —— 指を離す順は自由であってほしいので、
+             `이` を押さえたまま RT を先に離しても `으` へ戻らない。
+           ★★上流（GIME の Swift / Kotlin・labo web の TS）も `rowChanged || vowelChanged`
+             しか見ていない。**4 実装に同じ穴**があるので、上流にも同じ形で入れること。 */
+        const int rtPressed = f->rtNow && !s->prevRT;
         int emit = 0, replace = 0;
 
         if (!s->prevVowelPressed) {
             emit = 1;
-        } else if (rowChanged || vowelChanged) {
+        } else if (rowChanged || vowelChanged || rtPressed) {
             /* ★子音を離しての行変化は「打ち直し」ではないので出さない（日本語と同じ判断） */
             const int released = rowChanged && f->consonantCount < s->prevConsonantCount;
             if (!released) {
                 emit = 1;
-                replace = s->eagerSet && (f->now - s->eagerTime) < GP_CHORD_WINDOW_MS;
+                /* ★RT が着いただけなら**時間窓を見ない** —— 母音のボタンは離れて
+                   いないので、間が空いても同じ音節の差し替えであることは確か。 */
+                replace = (rtPressed && !rowChanged && !vowelChanged)
+                        ? 1
+                        : (s->eagerSet && (f->now - s->eagerTime) < GP_CHORD_WINDOW_MS);
             }
         }
         if (emit && n < 4) {
@@ -321,9 +336,20 @@ static int step_korean(GpMachine *s, const GpFrameKana *f, GpAction out[4])
         s->korAllReleased = 0;
     }
 
-    /* RT = 単押しのリリースで ㅣ 付加の複合母音（押しながらは母音の層の切替） */
+    /* RT = 単押しのリリースで ㅣ 付加の複合母音（押しながらは母音の層の切替）
+       ★★**RT と母音が両方押されていれば「使った」**（2026-09-04・実機の指摘）。
+         ★これが無いと、押下エッジのリセットが**母音側で立てた印を後ろから
+           打ち消す** —— 離したときに「単押しだった」と見なされ ㅣ が余計に足される。
+           実測: `여`（RT + □ = ㅕ）が **`예`**（ㅕ + ㅣ）になっていた。
+         ★**ずっと壊れていたが `ㅣ+ㅣ` や `ㅛ+ㅣ` が成立しない**ぶん、母音によっては
+           表に出なかった（`이` `요` は無事に見えた）。★**症状の一致 ≠ 正しさ**。
+         ★★**Android には既に入っていた**（`if (rtNow && vowelNow) rtUsed = true`）——
+           iOS / labo web / ここに伝わっていなかった。**順序に依存しない**ぶん
+           「リセットを前に出す」より確か。 */
     if (f->rtNow && !s->prevRT)
         s->rtUsed = 0;
+    if (f->rtNow && f->vowelNow)
+        s->rtUsed = 1;
     if (!f->rtNow && s->prevRT) {
         if (!s->rtUsed && !f->ltNow && n < 4)
             out[n++].type = GPA_KO_ADD_I;

@@ -86,8 +86,18 @@ int ko_apply(KoComposer *k, const GpAction *a, uint16_t *out, int *replace)
         /* ★row を変えたときは、いま付いている받침を**戻してから**付け直す
            （stepKorean が revert を立てて知らせる）。差し替えは 1 字のまま。
            ★戻す先は -1 ではなく `rollback_coda` —— 겹받침を作っていた場合、
-             1 つ目の받침まで消してしまうと元に戻せない。 */
-        if (a->revert)
+             1 つ目の받침まで消してしまうと元に戻せない。
+           ★★**戻せるのは `rollback_pending` のときだけ**（2026-09-04・実機の指摘）。
+             ★入力層（input.c）は**받침が実際に付いたかを知らない** ―― 指示を出した
+             時点でフラグを立てるので、`patchim()` が「成立しない組み合わせ」で
+             何も出さなかった場合にずれる。そのまま戻すと **`rollback_coda` が古い**まま
+             使われ、**前の音節の받침が消える**。
+             ★実測: `당` のあと `신` を打つのに LB と ↑ が**同じフレームに来ないと**
+             `다신` になっていた（LB 先でも十字キー先でも同じ）。
+             ★★上流（GIME）は `if case .added = inputPatchim { patchimRollbackActive = true }`
+             と**成功したときだけ**立てている。層を分けたときにこの結び付きが落ちた
+             —— varga の latch で踏んだのと同じ形。 */
+        if (a->revert && k->rollback_pending)
             k->coda = k->rollback_coda;
         return patchim(k, a->coda, out, replace);
     case GPA_KO_REVERT:
