@@ -1399,8 +1399,16 @@ static void interactive(void)
                  母音グリッドにも隙間が無い）ので、ここに置くしかない。
                ★`?` はエンジンが `.` に潰すが、**画面には打った通りが出る**ので入れる
                  （日本語の わ行お段 `？` と同じ理由。gen_tables.py の注記）。
-               ★`'` は DOCTOR の応答が引用に使う —— **機械が印字する字はユーザーも
-                 打てる**、という日本語・英語で保たれている性質を韓国語でも保つ。 */
+               ★`『 』` は DOCTOR の応答が引用に使う —— **機械が印字する字はユーザーも
+                 打てる**、という日本語・英語で保たれている性質を韓国語でも保つ
+                 （日本語で `「」` が打てるのと同じ話 ―― や行の い段/え段）。
+               ★★**2026-09-04 に `'` から `『 』` へ替えた**（実機で「見づらい」と言われた）。
+                 ★`"` にはできない —— upstream の `eliza_uppercase()` が
+                 **引用符 14 種を空白に潰す**（残るのは `'` だけ）。upstream は変えない。
+                 ★한글 맞춤법 は 큰따옴표(" ") と **겹낫표(『 』) を対等に認める**ので、
+                 これは代用ではなく**直接引用の正しい書き方**。送りも 6px → 23px。
+               ★2 字ぶん枠を食うので**韓国語だけ 6 段**になった。`'` は落とした
+                 （韓国語で単独の `'` を打つ機会は少ない）。 */
             /* ★★**ヒンディー語は 4 段**（空白 → `।` → `,` → `॥`）。空白が最初なのは
                  英語と同じ理由 —— ELIZA は空白でしか語を切らない。
                ★★`,` を入れたのは**DOCTOR の応答が読点を打つから**
@@ -1411,12 +1419,13 @@ static void interactive(void)
                ★`॥`（double danda）は詩文の切れ目で日常には出ないので最後。 */
             static const uint16_t PUNCT_JA[] = { 0x3001, 0x3002, 0x3000 };
             static const uint16_t PUNCT_EN[] = { 0x0020, 0x002E, 0x002C };
-            static const uint16_t PUNCT_KO[] = { 0x0020, 0x002E, 0x003F, 0x002C, 0x0027 };
+            static const uint16_t PUNCT_KO[] = { 0x0020, 0x002E, 0x003F, 0x002C,
+                                                 0x300E, 0x300F };
             static const uint16_t PUNCT_HI[] = { 0x0020, 0x0964, 0x002C, 0x0965 };
             const uint16_t *tbl = seat == SEAT_EN ? PUNCT_EN
                                 : seat == SEAT_KO ? PUNCT_KO
                                 : seat == SEAT_HI ? PUNCT_HI : PUNCT_JA;
-            const int steps = seat == SEAT_KO ? 5 : seat == SEAT_HI ? 4 : 3;
+            const int steps = seat == SEAT_KO ? 6 : seat == SEAT_HI ? 4 : 3;
             int idx = step_n - 1;
             if (idx >= steps)
                 idx = steps - 1;
