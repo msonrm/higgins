@@ -256,6 +256,125 @@ enum {
 static uint16_t box[BOX_H][W];
 static int box_rows = 1;               /* いま見せている行数（1..BOX_ROWS） */
 
+/* ---- 枠の中で字を縦の中央へ ----
+ *
+ * ★**器（BASE 行）は一番きつい字に合わせてある** —— デーヴァナーガリーは上下に
+ *   母音記号が付くので 30 行（`glyph.h` の頭書き）。そのぶん**余りは下に偏る**:
+ *   実測（23px・器 30）で「あ」は 上 2 / 下 7、ハングルは 上 6 / 下 11、
+ *   ラテンの小文字は 上 2 / 下 9。ベースラインが器の 21 行目に来るためで、
+ *   広げた 6 行はほぼ全部がデーヴァナーガリーの descender のぶん。
+ * ★本文では器の境目が見えないので誰も気づかないが、**枠を引く場所**
+ *   （右下のインジケータ・メニューの帯）では「中身が上に寄って見える」。
+ *   ★器が 24 だったころは器が本文の字にぴったりだったので出なかった —— つまり
+ *     これは**器を広げたときに一緒に来た崩れ**（実機の指摘・2026-09-03）。
+ *
+ * ★★**推定しない。** `glyph.h`（PS1 と共有する 5 本）は ink の寸法を返さないので、
+ *   **一度描いて測る**。字の出どころを知らないまま測れるので、フォントを替えても
+ *   2 本目の面を足しても、席を足しても、ここは直さなくてよい。
+ * ★測るのは**その箱に出しうる字ぜんぶ**（`ind_alphabet`）—— 見えている 1 字だけで
+ *   決めると、行を替えるたびに中身が上下に跳ねる。★寸法の表を手で持たないので、
+ *   席を足しても「一覧の出どころ」を 1 つ足すだけで済む。
+ */
+static uint16_t inkbuf[BASE][W];
+
+/* s の n 字を**重ねて**描き、その ink が器の中で上下中央に来る下げ幅を返す。
+ * ★重ねるのは、要るのが**縦の広がりだけ**だから（横に並べると W を越える）。
+ * ★★**n 字まとめて渡すのが肝。** 箱が持っているのは「その席の一覧のうち、
+ *   いま見えている 1 つ」なので、**器は一覧ぜんぶで決める** —— 1 つずつ中央へ
+ *   寄せると、行を替えるたびに中身が上下に跳ねる（英語は ±3px 動く。
+ *   ascender も descender も無い `abc` と、両方ある `ghi` の差）。
+ */
+static int ink_dy(const uint16_t *s, int n)
+{
+    enum { X0 = 8 };
+    if (n <= 0)
+        return 0;
+    memset(inkbuf, 0, sizeof inkbuf);
+    /* ★clip を戻す先は **(0, WIN_H)** —— render.c が最後に必ず置いていく値で、
+       main.c の描画（欄・候補窓・メニュー）はどれもそれが置かれている前提で動く。 */
+    glyph_clip(0, BASE);
+    for (int i = 0; i < n; i++)
+        draw24(inkbuf, BASE, X0, 0, s[i], 0x7FFF);   /* ★色は最大の白で固定 ——
+            実際に使う色（INK / ACCENT / 地色）で測ると、**同じ字なのに置き場所で
+            1px ずれる**（暗い色ではアンチエイリアスの端が RGB555 で 0 に丸まる）。
+            ink は字の性質であって、どの色で塗るかとは無関係。 */
+    glyph_clip(0, WIN_H);
+
+    int top = -1, bot = -1;
+    for (int r = 0; r < BASE; r++)
+        for (int c = 0; c < W; c++)
+            if (inkbuf[r][c]) {
+                if (top < 0)
+                    top = r;
+                bot = r;
+                break;
+            }
+    if (top < 0)
+        return 0;                      /* 空白だけ ―― 動かさない */
+    return (BASE - (bot - top + 1)) / 2 - top;
+}
+
+/* インジケータの箱に**出しうる字を全部**（＝器を決める一覧）。
+   ★席ごとに一覧の出どころが違うだけで、考え方は同じ。 */
+static int ind_alphabet(uint16_t *out, int max)
+{
+    int n = 0;
+    if (seat == SEAT_HI) {
+        /* varga 5 つの頭字 ＋ 非 varga 層の 2 つ（半母音 / LT で摩擦音） */
+        DevaMachine m;
+        deva_machine_init(&m);
+        for (int d = 0; d <= 4 && n < max; d++) {
+            m.lsLatch = d;
+            out[n++] = deva_head_char(&m, 0);
+        }
+        m.nonVarga = 1;
+        for (int lt = 0; lt <= 1 && n < max; lt++)
+            out[n++] = deva_head_char(&m, lt);
+        return n;
+    }
+    for (int r = 0; r < 10 && n < max; r++) {
+        if (seat == SEAT_KO) {
+            out[n++] = ko_row_char(r);
+        } else if (seat == SEAT_EN) {
+            uint16_t t[4];
+            const int k = gp_row_chars_en(r, t, 4);
+            for (int i = 0; i < k && n < max; i++) {
+                out[n++] = t[i];
+                /* ★シフト中は大文字が出る。同じ箱に入るので一緒に測る */
+                if (t[i] >= 'a' && t[i] <= 'z' && n < max)
+                    out[n++] = (uint16_t)(t[i] - 0x20);
+            }
+        } else {
+            out[n++] = gp_row_char(r);
+        }
+    }
+    return n;
+}
+
+/* 席が変わるまで動かない値なので覚えておく（毎打鍵で 80 字描き直さない）。 */
+static int ind_dy(void)
+{
+    static int dy, cached = -1;
+    if (cached != seat) {
+        uint16_t a[96];
+        dy = ink_dy(a, ind_alphabet(a, (int)(sizeof a / sizeof *a)));
+        cached = seat;
+    }
+    return dy;
+}
+
+/* シフトの印（⇧ / △ / ▲）。★3 つは同じ場所で入れ替わるので、まとめて測る。 */
+static int mark_dy(void)
+{
+    static const uint16_t MARKS[] = { 0x21E7, 0x25B3, 0x25B2 };
+    static int dy, done;
+    if (!done) {
+        dy = ink_dy(MARKS, (int)(sizeof MARKS / sizeof *MARKS));
+        done = 1;
+    }
+    return dy;
+}
+
 /* 字を描ける右端。★英語は印の枠のぶん狭い。**切り替えは欄が空のときだけ**なので、
    ここが変わっても折返しが目の前で動くことはない。 */
 static int box_x1(void)
@@ -470,12 +589,16 @@ static void draw_input(const uint16_t *s, int n, int car,
         box[iy][c] = box[iy + BASE - 1][c] = DIM;
     for (int r = 0; r < BASE; r++)
         box[iy + r][kx - 3] = box[iy + r][kx + inner + 2] = DIM;
+    /* ★縦は **ink で**中央へ（ink_dy の頭書き）—— 器の余りは下に偏っているので、
+       器の上端に置くと**中身が上に寄って見える**（実機の指摘・2026-09-03）。
+       ★印は枠の外だが、同じ器に同じ規則で置けば箱の中身と目線が揃う。 */
+    const int idy = ind_dy();
     for (int i = 0, ix = kx + (inner - iw) / 2; i < ilen; i++) {   /* 箱の中で中央寄せ */
-        draw24(box, bufh, ix, iy, ind[i], ACCENT);
+        draw24(box, bufh, ix, iy + idy, ind[i], ACCENT);
         ix += glyph_w(ind[i]);
     }
     if (mark)                          /* ★枠の外（左）。隙間 4px */
-        draw24(box, bufh, kx - 3 - 4 - glyph_w(mark), iy, mark, ACCENT);
+        draw24(box, bufh, kx - 3 - 4 - glyph_w(mark), iy + mark_dy(), mark, ACCENT);
 
     /* ★隙間ごと送る（BOX_GAP の注記）。欄が伸びても縮んでも、境目に古い画素が残らない。 */
     gp0_upload(0, boxy - BOX_GAP, W, bufh, box[0]);
@@ -768,11 +891,31 @@ static void conv_accept(void)
 
 static const char *const MENU[] = { "つづける", "やめる" };
 /* ★高さは「上下の余白が同じ」になるように決める。
-   帯は各行の 4px 上から 32px なので、上の余白 = 12-4 = 8。
-   下も 8 にするには MENU_H = N*32 + 16（+24 にしていたら下だけ 16 になって、
-   実機で「やめるの下だけ広い」と言われた・2026-08-31）。 */
-enum { MENU_N = 2, MENU_W = 320, MENU_ROW = 32, MENU_H = MENU_N * MENU_ROW + 16 };
+   帯は各行の 4px 上から MENU_ROW なので、上の余白 = 12-4 = 8。
+   下も 8 にするには MENU_H = N*MENU_ROW + 16（+24 にしていたら下だけ 16 になって、
+   実機で「やめるの下だけ広い」と言われた・2026-08-31）。
+   ★★**行の高さは器（BASE）から導く。** もとは 24 を前提にした 32 が直に書いてあり、
+     器を 30 へ広げたとき（デーヴァナーガリー）に**帯が次の行へ 6px 食い込み、
+     下の余白が 8 → 2 になった**（実機の指摘・2026-09-03）。
+     ★同じ形を `render.h` の BODY_H / CMD_Y / WIN_H でも踏んでいる ——
+       **器を前提にした数は、器から導いておかないと必ず 1 つ直し忘れる。** */
+enum { MENU_N = 2, MENU_W = 320, MENU_ROW = BASE + 8, MENU_H = MENU_N * MENU_ROW + 16 };
 static uint16_t menubox[MENU_H][W];
+
+/* ★**2 行を同じ位置に座らせる**ため、器は全行まとめて測る（ind_dy と同じ考え）。 */
+static int menu_dy(void)
+{
+    static int dy, done;
+    if (!done) {
+        uint16_t t[64];
+        int n = 0;
+        for (int i = 0; i < MENU_N; i++)
+            n += u8_to_u16(MENU[i], -1, t + n, (int)(sizeof t / sizeof *t) - n);
+        dy = ink_dy(t, n);
+        done = 1;
+    }
+    return dy;
+}
 
 static void menu_draw(int sel)
 {
@@ -783,6 +926,7 @@ static void menu_draw(int sel)
     for (int j = 0; j < MENU_H; j++)
         menubox[j][x] = menubox[j][x + MENU_W - 1] = OPT_EDGE;
 
+    const int dy = menu_dy();          /* ★縦は ink で中央へ（インジケータと同じ規則） */
     for (int i = 0; i < MENU_N; i++) {
         uint16_t t[32];
         const int n = u8_to_u16(MENU[i], -1, t, 32);
@@ -794,10 +938,10 @@ static void menu_draw(int sel)
            PANEL（本文より 3 段明るい灰）を敷いたら、藍の板の上では**暗く見えて
            沈んだ** —— 同じ色でも、下に敷く色で意味が変わる。 */
         if (i == sel)
-            fill_rect(menubox, x + 8, y - 4, MENU_W - 16, BASE + 8, ACCENT);
+            fill_rect(menubox, x + 8, y - 4, MENU_W - 16, MENU_ROW, ACCENT);
         int cx = x + (MENU_W - w) / 2;
         for (int k = 0; k < n; k++) {
-            draw24(menubox, MENU_H, cx, y, t[k], i == sel ? OPT_BG : INK);
+            draw24(menubox, MENU_H, cx, y + dy, t[k], i == sel ? OPT_BG : INK);
             cx += glyph_w(t[k]);
         }
     }
