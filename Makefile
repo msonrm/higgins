@@ -7,7 +7,7 @@ CXXFLAGS ?= -std=c++20 -O1 -w
 BUILD     := build
 ELIZA_SRC := vendor/eliza/src/eliza.cpp
 
-.PHONY: all test test-ja test-ja-doctor test-ja-alias test-ja-coverage test-ko-doctor test-ko-coverage test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-ja-ranks test-ko-ranks test-ja-words test-web test-api test-native clean
+.PHONY: all test test-ja test-ja-doctor test-ja-alias test-ja-coverage test-ko-doctor test-ko-coverage test-ko-words test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-ja-ranks test-ko-ranks test-ja-words test-web test-api test-native clean
 
 all: $(BUILD)/eliza
 
@@ -20,7 +20,7 @@ $(BUILD)/eliza: $(ELIZA_SRC)
 #   そこで 2 つ焼いて、両方の結果が揃ってはじめて緑とする:
 #     eliza-count  … 本番と同じロジック + 件数表示   → 「1 件以上あって 0 失敗」
 #     eliza-canary … それにわざと落ちるテストを 1 個 → 「1 失敗」（検査が生きている証拠）
-test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-ja-coverage test-ko-doctor test-ko-coverage test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-ja-words test-ja-ranks test-ko-ranks test-web test-api test-native
+test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-ja-coverage test-ko-doctor test-ko-coverage test-ko-words test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-ja-words test-ja-ranks test-ko-ranks test-web test-api test-native
 	@printf '\n' | $(BUILD)/eliza-count | grep -qE '[1-9][0-9]* assertions' \
 	  || { echo 'FAIL: テストが 1 件も走っていない'; exit 1; }
 	@printf '\n' | $(BUILD)/eliza-count | grep -q '0 failures' \
@@ -105,6 +105,21 @@ test-ko-doctor: $(BUILD)/eliza
 #   ★実際に 8 件（제가 / 내가 の 4 形ずつ）を初回で掘り当てた。
 test-ko-coverage: $(BUILD)/eliza
 	@python3 tools/coverage_ko.py doctor/ko.txt
+
+# ★★**語の切り出し**（韓国語）。★日本語と同じ理由で別に持つ ——
+#   応答のゴールデン（ko_doctor）は**二役も 조사 の剥がしすぎも 1 つも踏んでいなかった**。
+#   ★見ているのは 2 つ: 二役（`못`＝釘/できない・`네`＝はい/四つ・`예`＝はい/例）と、
+#   ★★**ユーザーの言葉が書き換わって返らないこと**（「사과」が「사와」になっていた）。
+test-ko-words: $(BUILD)/eliza
+	@python3 tools/josa.py doctor/ko.txt < experiments/ko_words.in \
+	  | $(BUILD)/eliza --nobanner doctor/ko.txt \
+	  | python3 tools/tsunagi_ko.py \
+	  | diff -u experiments/ko_words.out - > /dev/null \
+	  || { echo 'FAIL: 韓国語の語の切り出しゴールデンが一致しない'; \
+	       python3 tools/josa.py doctor/ko.txt < experiments/ko_words.in \
+	         | $(BUILD)/eliza --nobanner doctor/ko.txt | python3 tools/tsunagi_ko.py \
+	         | diff -u experiments/ko_words.out - | head -20; exit 1; }
+	@echo 'OK: 韓国語の語の切り出しゴールデン一致'
 
 # ★★**日本語にも同じ被覆検査を敷いた**（2026-09-03）。★韓国語・ヒンディー語には
 #   前からあったのに**日本語だけ無かった** —— 2026-09-01 に 13 件直したときは

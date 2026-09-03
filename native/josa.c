@@ -59,10 +59,11 @@ static int head_of(const uint16_t *run, int n)
     return 0;
 }
 
-/* s[0..n) の末尾が KO_TAIL のどれかなら、その添字。★長い順に見る。 */
-static int tail_at_end(const uint16_t *s, int n, int need_shorter)
+/* s[0..n) の末尾が KO_TAIL のどれかなら、その添字。★長い順に見る。
+   ★`from` から探し始める —— 조사 として却下したものを飛ばして次を見るため。 */
+static int tail_at_end_from(const uint16_t *s, int n, int need_shorter, int from)
 {
-    for (int k = 0; k < KO_TAIL_N; k++) {
+    for (int k = from; k < KO_TAIL_N; k++) {
         const int L = KO_TAIL[k].len;
         if (need_shorter ? (L >= n) : (L > n))
             continue;
@@ -73,6 +74,24 @@ static int tail_at_end(const uint16_t *s, int n, int need_shorter)
             return k;
     }
     return -1;
+}
+
+static int tail_at_end(const uint16_t *s, int n, int need_shorter)
+{
+    return tail_at_end_from(s, n, need_shorter, 0);
+}
+
+/* この 조사 を剥がしてよいか（★어미 は対象外・常に 1）。
+   ★★**조사 は名詞に付く。** 剥がした残りが**1 音節で辞書にも無い**なら、それは
+     조사 ではなく**語の一部**。実測: 「사과는」が「사·와·는」に割れ、しかも
+     과 → 와 と代表形へ寄るので、★**ユーザーの言葉を書き換えて引用していた**。
+   ★**어미 には掛けない** —— 「받아요」の「받」のように 1 音節の語幹は普通なので。
+   ★規則の正典は tools/josa.py の josa_ok()。 */
+static int josa_ok(int k, const uint16_t *run, int rest)
+{
+    if (!KO_TAIL[k].josa)
+        return 1;
+    return rest != 1 || head_of(run, 1);
 }
 
 /* 語尾のかたまりを後ろから既知の 조사・어미 に分ける（残った先頭は 1 かけら）。 */
@@ -129,7 +148,9 @@ static int split_run(const uint16_t *run, int n, Tok *out, int max)
     Tok tails[TOK_MAX];                            /* ② 語尾を剥がしてから引く */
     int tn = 0, hn = n;
     while (tn < TOK_MAX) {
-        const int k = tail_at_end(run, hn, 1);     /* ★頭が残ることを要求する */
+        int k = tail_at_end(run, hn, 1);           /* ★頭が残ることを要求する */
+        while (k >= 0 && !josa_ok(k, run, hn - KO_TAIL[k].len))
+            k = tail_at_end_from(run, hn, 1, k + 1);   /* ★語の一部なら次を見る */
         if (k < 0)
             break;
         tails[tn].p = KO_TAIL[k].c;
