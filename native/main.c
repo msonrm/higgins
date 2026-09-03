@@ -22,6 +22,7 @@
 #include "josa.h"
 #include "korean.h"
 #include "devanagari.h"
+#include "hindi.h"
 #include "tsunagi.h"
 #include "tsunagi_ko.h"
 #include "eliza_bridge.h"
@@ -43,8 +44,7 @@ extern const char _binary_script_ko_txt_start[];
 extern const char _binary_script_ko_txt_end[];
 extern const char _binary_script_en_txt_start[];
 extern const char _binary_script_en_txt_end[];
-/* ★ヒンディー語の相手は**まだ仮置き**（doctor/hi.txt の頭書き）—— 席だけ先に立てて
-   デーヴァナーガリー入力を実機で打てるようにしている。訳が入れば差し替えるだけ。 */
+/* ★ヒンディー語の相手（doctor/hi.txt・2026-09-03）。 */
 extern const char _binary_script_hi_txt_start[];
 extern const char _binary_script_hi_txt_end[];
 
@@ -101,9 +101,11 @@ static void say(const char *utf8, uint16_t color)
     const int max = (int)(sizeof buf / sizeof *buf);
     /* ★出口は席で替わる。韓国語は**空白に意味がある**（띄어쓰기）ので、
        日本語の tsunagi（日本語に隣接する空白を全部消す）は使えない。
-       ★★**ヒンディー語は tsunagi のままでよい** —— あれが空白を消すのは
+       ★★**ヒンディー語は出口が要らない** —— tsunagi が空白を消すのは
          「日本語に隣接する空白」だけで（tsunagi.c の is_ja）、デーヴァナーガリーは
-         その 5 範囲のどれにも入らない。英語と同じ扱いになる。 */
+         その 5 範囲のどれにも入らないので素通りする。英語と同じ扱いになる。
+       ★日本語・韓国語に出口が要ったのは「空白を消す」「조사 を実現する」という
+         仕事があったからで、ヒンディー語にはどちらも無い。 */
     const int n = seat == SEAT_KO ? tsunagi_ko(utf8, buf, max)
                                   : tsunagi(utf8, buf, max);
     hist_line(buf, n, color);
@@ -901,13 +903,13 @@ static void send(const uint16_t *typed, int n)
          조사・어미 を剥がすだけ（josa）。 */
     ko_commit(&ko);
     deva_commit(&dv);
-    /* ★★**ヒンディー語も英語と同じ道**（そのまま渡す）—— 空白があるので分かち書きは
-       要らず、後置詞が分離語なので助詞剥がしも要らない。ELIZA から見ると
-       「空白区切りの言語が 1 つ増えた」だけになる。
-       ★ただし **danda `।` は語にくっついたまま**なので、「नमस्ते।」は「नमस्ते」と
-         別のトークンになる。切るのが正しいが、それは訳（段 H3）と一緒に決める
-         —— 韓国語で ASCII の句読点を切っていなかったのと同じ形。 */
-    if (seat == SEAT_EN || seat == SEAT_HI)
+    /* ★★**ヒンディー語の入口は hindi_in**（danda を `.` に写す / nukta を分解形へ）。
+       分かち書きも助詞剥がしも要らない（空白があり、後置詞は分離語）ので、
+       ELIZA から見ると「空白区切りの言語が 1 つ増えた」だけ ——
+       ★ただし **danda を写さないと節が切れず、埋め戻しが文をまたぐ**（hindi.h の注記）。 */
+    if (seat == SEAT_HI)
+        hindi_in(typed, n, buf, (int)sizeof buf);
+    else if (seat == SEAT_EN)
         u16_to_u8(typed, n, buf, (int)sizeof buf);
     else if (seat == SEAT_KO)
         josa(typed, n, buf, (int)sizeof buf);
@@ -1213,17 +1215,22 @@ static void interactive(void)
                  （日本語の わ行お段 `？` と同じ理由。gen_tables.py の注記）。
                ★`'` は DOCTOR の応答が引用に使う —— **機械が印字する字はユーザーも
                  打てる**、という日本語・英語で保たれている性質を韓国語でも保つ。 */
-            /* ★★**ヒンディー語は 空白 → danda `।` → double danda `॥`**
-                 （GIME の Devanagari モードと同じ順）。★空白が最初なのは英語と
-                 同じ理由 —— ELIZA は空白でしか語を切らない。 */
+            /* ★★**ヒンディー語は 4 段**（空白 → `।` → `,` → `॥`）。空白が最初なのは
+                 英語と同じ理由 —— ELIZA は空白でしか語を切らない。
+               ★★`,` を入れたのは**DOCTOR の応答が読点を打つから**
+                 （「नमस्ते। बताइए, आपको क्या परेशानी है」）—— **機械が印字する字は
+                 ユーザーも打てる**、という日本語・英語・韓国語で保たれている性質を
+                 ここでも保つ。★デーヴァナーガリーの席は面ボタンが母音で埋まっていて
+                 記号を置く固定枠が無いので、韓国語と同じくここに置くしかない。
+               ★`॥`（double danda）は詩文の切れ目で日常には出ないので最後。 */
             static const uint16_t PUNCT_JA[] = { 0x3001, 0x3002, 0x3000 };
             static const uint16_t PUNCT_EN[] = { 0x0020, 0x002E, 0x002C };
             static const uint16_t PUNCT_KO[] = { 0x0020, 0x002E, 0x003F, 0x002C, 0x0027 };
-            static const uint16_t PUNCT_HI[] = { 0x0020, 0x0964, 0x0965 };
+            static const uint16_t PUNCT_HI[] = { 0x0020, 0x0964, 0x002C, 0x0965 };
             const uint16_t *tbl = seat == SEAT_EN ? PUNCT_EN
                                 : seat == SEAT_KO ? PUNCT_KO
                                 : seat == SEAT_HI ? PUNCT_HI : PUNCT_JA;
-            const int steps = seat == SEAT_KO ? 5 : 3;
+            const int steps = seat == SEAT_KO ? 5 : seat == SEAT_HI ? 4 : 3;
             int idx = step_n - 1;
             if (idx >= steps)
                 idx = steps - 1;
@@ -1554,8 +1561,8 @@ int main(void)
     if (!hg_eliza_init(HG_KO, _binary_script_ko_txt_start, len_ko, 0))
         say("韓国語のスクリプトが読めない。", INK);
     /* ★ヒンディー語も **0**（組み込みメッセージを使わない）—— 英語が出ると相手が
-       急に英語で返す。★★この席の相手は**まだ仮置き**で、doctor/hi.txt 自身が
-       「まだ相手がいない」と名乗る。訳（段 H3）が入ればファイルを差し替えるだけ。 */
+       急に英語で返す。★検査 tools/coverage_hi.py が「応答にラテン文字が出たら失敗」で
+       見張っている（キーワード 125 語 × 4 形 = 500 件）。 */
     const int len_hi = (int)(_binary_script_hi_txt_end - _binary_script_hi_txt_start);
     if (!hg_eliza_init(HG_HI, _binary_script_hi_txt_start, len_hi, 0))
         say("ヒンディー語のスクリプトが読めない。", INK);

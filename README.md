@@ -4,16 +4,16 @@
 
 **1966 年の ELIZA を忠実に走らせ、4 言語を教え込み、キーボードの無い機械で打つ。**
 
-> **Three of the four run on a handheld with no keyboard: Japanese, English (the 1966
-> original) and Korean. Hindi can now be *typed* — font, shaping and Devanagari input
-> are all in — but it has **no one to talk to yet**: the fourth seat holds a placeholder
-> that says so itself, until the DOCTOR script is translated.**
+> **All four now run on a handheld with no keyboard: Japanese, English (the 1966
+> original), Korean and Hindi. Hindi was the last and the most expensive — not for the
+> font or the shaping, but because Devanagari needs an input method, and because Hindi
+> verbs agree with their subject, so reflecting "I" into "you" is not a closed list.**
 >
-> **4 つのうち 3 つが動く** —— 日本語・英語（1966 年の原典）・韓国語が、キーボードの
-> 無いハンドヘルド（PortMaster）で打てる。**ヒンディー語は「打てる」ようになった**
-> （フォント・shaping・デーヴァナーガリー入力）が、★**話す相手（DOCTOR スクリプト）が
-> まだ無い** —— 4 つ目の席には仮置きが座っていて、**それ自体が「まだ相手がいない」と
-> 名乗る**。
+> **4 つとも動く** —— 日本語・英語（1966 年の原典）・韓国語・ヒンディー語が、
+> キーボードの無いハンドヘルド（PortMaster）で打てる。★**いちばん高くついたのは
+> ヒンディー語**で、理由はフォントでも shaping でもなく、**デーヴァナーガリーの
+> 入力方式**と、**動詞が主語に一致する**こと（＝「私」→「あなた」の反転が
+> 閉じた表では書き切れない）だった。
 
 ## What it is / これは何か
 
