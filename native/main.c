@@ -1169,6 +1169,7 @@ static int step_deva_frame(int p, const uint8_t axes[4], int rs, int fields)
         case DEVA_OP_ANUSVARA: o = deva_toggle_anusvara(&dv); break;
         case DEVA_OP_VISARGA:  o = deva_visarga(&dv); break;
         case DEVA_OP_LONG:     o = deva_long_shift(&dv); break;
+        case DEVA_OP_CANDRA:   o = deva_candra(&dv); break;
         case DEVA_OP_CURSOR: {
             /* ★向きは 横 -1/+1・縦 -2/+2。**符号を戻してから読む**
                （GpAction は unsigned short で運んでいる）。 */

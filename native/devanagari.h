@@ -55,6 +55,7 @@ DevaOut deva_nukta(Deva *d);
 DevaOut deva_toggle_anusvara(Deva *d);
 DevaOut deva_visarga(Deva *d);
 DevaOut deva_long_shift(Deva *d);
+DevaOut deva_candra(Deva *d);                           /* ॉ / ॅ（英語由来語） */
 DevaOut deva_backspace(Deva *d);
 void    deva_commit(Deva *d);
 

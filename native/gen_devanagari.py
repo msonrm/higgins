@@ -98,6 +98,11 @@ def pair_map(src, name):
 vlong = pair_map(COM, "devaVowelShortToLong")
 mlong = pair_map(COM, "devaMatraShortToLong")
 
+# ---- candra（LT + RS↑ の post-shift）----
+# ★英語由来語（डॉक्टर / कॉलेज / ऑफिस）に軒並み付くので日常語の綴りに要る。
+vcandra = pair_map(COM, "devaVowelToCandra")
+mcandra = pair_map(COM, "devaMatraToCandra")
+
 out = ['/* native/gen_devanagari.py が labo の GIME（Swift）から生成。手で編集しない。',
        ' * 正典 = Sources/GIME/GamepadResolver.swift（配置）',
        ' *        Sources/GIME/DevanagariComposer.swift（長短の対）',
@@ -138,9 +143,19 @@ for a, b in vlong:
 out += ["};", f"static const unsigned short DEVA_MATRA_LONG[{len(mlong)}][2] = {{"]
 for a, b in mlong:
     out.append(f"    {{ {cp(a)}, {cp(b)} }},")
+out += ["};", "",
+        "/* candra 形（LT + RS↑ の post-shift）。{もとの母音, candra 形} の対。",
+        "   ★長短の対と同じ「後から差し替える」形 —— candra は母音記号を**置換**する",
+        "     操作で、anusvara のように末尾へ足すのではない。 */",
+        f"static const unsigned short DEVA_VOWEL_CANDRA[{len(vcandra)}][2] = {{"]
+for a, b in vcandra:
+    out.append(f"    {{ {cp(a)}, {cp(b)} }},")
+out += ["};", f"static const unsigned short DEVA_MATRA_CANDRA[{len(mcandra)}][2] = {{"]
+for a, b in mcandra:
+    out.append(f"    {{ {cp(a)}, {cp(b)} }},")
 out += ["};", "", "#endif", ""]
 
 Path("devanagari_tables.h").write_text("\n".join(out))
 print(f"OK: devanagari_tables.h（varga {len(vargas)}×{len(vargas[0])} / "
       f"非 varga {len(semi)}+{len(sib)} / 母音 {sum(1 for c in indep if c)} / "
-      f"長短の対 {len(vlong)}+{len(mlong)}）")
+      f"長短の対 {len(vlong)}+{len(mlong)} / candra {len(vcandra)}+{len(mcandra)}）")

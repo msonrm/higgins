@@ -99,7 +99,7 @@ enum { GPA_KANA, GPA_YOUON, GPA_KO_SYLLABLE, GPA_KO_PATCHIM, GPA_KO_ADD_I,
    ★DEVA_OP_VOWEL は「matra を先に試し、子音が無ければ独立母音」の 1 手で、
      どちらになるかは**合成器が状態を見て決める**（呼ぶ側は両方を渡すだけ）。 */
 enum { DEVA_OP_CONSONANT, DEVA_OP_VOWEL, DEVA_OP_HALANT, DEVA_OP_NUKTA,
-       DEVA_OP_ANUSVARA, DEVA_OP_VISARGA, DEVA_OP_LONG,
+       DEVA_OP_ANUSVARA, DEVA_OP_VISARGA, DEVA_OP_LONG, DEVA_OP_CANDRA,
        /* ★キャレット移動と改行も**ここが返す**。席に依存しない操作だが、
           「RT が何に使われたか」の判定（halant を抑止するか）が入力側にあるので、
           main.c に同じ条件をもう一度書くと**二重になって必ずずれる**。

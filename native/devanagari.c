@@ -10,6 +10,7 @@ enum {
     CHANDRABINDU = 0x0901, /* ँ */
     VISARGA = 0x0903,      /* ः */
     AA_MATRA = 0x093E,     /* ा */
+    CANDRA_O = 0x0949,     /* ॉ ―― 素の子音に付ける candra（डॉक्टर の ड） */
 };
 
 int deva_is_consonant(unsigned short c) { return c >= 0x0915 && c <= 0x0939; }
@@ -194,6 +195,39 @@ DevaOut deva_long_shift(Deva *d)
         if (DEVA_VOWEL_LONG[i][0] == last) {
             d->len--;
             return put(d, DEVA_VOWEL_LONG[i][1], 1);
+        }
+    return NONE;
+}
+
+/* 直前の母音 / matra を candra 形へ（LT + RS↑ の post-shift）。
+ * ★英語由来語に軒並み付く（`डॉक्टर` `कॉलेज` `ऑफिस` `कॉफ़ी`）ので日常語の綴りに要る。
+ *   - inherent schwa（子音のまま）… `ॉ` を足して "Cŏ" にする
+ *   - matra … 対応する candra 形へ置き換える（`ा` `ो` → `ॉ` / `े` → `ॅ`）
+ *   - 独立母音 … 同じく置き換える（`अ` `आ` `ओ` → `ऑ` / `ए` → `ऍ`）
+ *   - すでに candra / 対象外 … ok=0
+ * ★★**anusvara の巡回には混ぜない**（上流の判断）—— あちらは末尾へ**足す**操作で
+ *   「もう一度で外れる」が成り立つが、candra は**置換**なので戻り先が無い。
+ *   ★形は `deva_long_shift` と同じ（どちらも「後から差し替える」）。 */
+DevaOut deva_candra(Deva *d)
+{
+    if (d->len == 0)
+        return NONE;
+    if (d->state == DEVA_CONSONANT) {
+        DevaOut o = put(d, CANDRA_O, 0);
+        if (o.ok)
+            d->state = DEVA_MATRA;
+        return o;
+    }
+    const unsigned short last = d->buf[d->len - 1];
+    for (unsigned i = 0; i < sizeof DEVA_MATRA_CANDRA / sizeof *DEVA_MATRA_CANDRA; i++)
+        if (DEVA_MATRA_CANDRA[i][0] == last) {
+            d->len--;
+            return put(d, DEVA_MATRA_CANDRA[i][1], 1);
+        }
+    for (unsigned i = 0; i < sizeof DEVA_VOWEL_CANDRA / sizeof *DEVA_VOWEL_CANDRA; i++)
+        if (DEVA_VOWEL_CANDRA[i][0] == last) {
+            d->len--;
+            return put(d, DEVA_VOWEL_CANDRA[i][1], 1);
         }
     return NONE;
 }

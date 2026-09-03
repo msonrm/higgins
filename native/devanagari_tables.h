@@ -52,4 +52,19 @@ static const unsigned short DEVA_MATRA_LONG[5][2] = {
     { 0x094B, 0x094C },
 };
 
+/* candra 形（LT + RS↑ の post-shift）。{もとの母音, candra 形} の対。
+   ★長短の対と同じ「後から差し替える」形 —— candra は母音記号を**置換**する
+     操作で、anusvara のように末尾へ足すのではない。 */
+static const unsigned short DEVA_VOWEL_CANDRA[4][2] = {
+    { 0x0905, 0x0911 },
+    { 0x0906, 0x0911 },
+    { 0x0913, 0x0911 },
+    { 0x090F, 0x090D },
+};
+static const unsigned short DEVA_MATRA_CANDRA[3][2] = {
+    { 0x093E, 0x0949 },
+    { 0x094B, 0x0949 },
+    { 0x0947, 0x0945 },
+};
+
 #endif

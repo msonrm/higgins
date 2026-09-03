@@ -560,9 +560,13 @@ int gp_step_deva(DevaMachine *s, const GpFrameDeva *f, GpAction out[4])
         }
     }
 
-    /* --- RS↑: anusvara ↔ chandrabindu / RS→: 長母音への昇格 --- */
+    /* --- RS↑: anusvara ↔ chandrabindu（LT 併用で candra）/ RS→: 長母音への昇格 --- */
+    /* ★同じ RS↑ に置いてあるのは、`ं` `ँ` `ॉ` `ॅ` が**どれも行の上に付く印**だから
+       （名前でも揃う ―― चन्द्रबिन्दु = candra + bindu）。★ただし**巡回には混ぜない** ——
+       anusvara は末尾へ足す操作で「もう一度で外れる」が成り立つが、candra は
+       母音記号の**置換**なので戻り先が無い。 */
     if (f->rsUpNow && !s->prevRsUp)
-        n = deva_push(out, n, DEVA_OP_ANUSVARA, 0, 0);
+        n = deva_push(out, n, f->ltNow ? DEVA_OP_CANDRA : DEVA_OP_ANUSVARA, 0, 0);
     if (f->rsRightNow && !s->prevRsRight)
         n = deva_push(out, n, DEVA_OP_LONG, 0, 0);
 
