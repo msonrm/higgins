@@ -298,6 +298,27 @@ int main(void)
         EMIT(deva_toggle_anusvara(&d));           /* ं */
         EMIT(deva_toggle_anusvara(&d));           /* → ँ */
         show("  हूँ（です・1 人称）→ ", buf, len);
+
+        /* ★★candra（`ॉ` / `ॅ`）—— 英語由来語（डॉक्टर / कॉलेज）に軒並み付く。
+           ★**素の子音に付ける**のと、**母音記号を差し替える**のは別の道なので両方見る。
+           ★上流（GIME）には 2026-09-03 まで無かった。移植の抜けではなく
+             **入力方式そのものの穴**だったので、GIME 側に足してから焼き直している。 */
+        deva_init(&d); len = 0;
+        EMIT(deva_consonant(&d, 0x0921));         /* ड */
+        EMIT(deva_candra(&d));                    /* ★素の子音 → ॉ を足す */
+        show("  डॉ（ドクターの頭）→ ", buf, len);
+
+        deva_init(&d); len = 0;
+        EMIT(deva_consonant(&d, 0x0915));         /* क */
+        EMIT(deva_matra(&d, 0x0947));             /* े */
+        EMIT(deva_candra(&d));                    /* ★े → ॅ に差し替え */
+        show("  कॅ（े を差し替える）→ ", buf, len);
+
+        deva_init(&d); len = 0;
+        EMIT(deva_vowel(&d, 0x0913));             /* ओ */
+        EMIT(deva_candra(&d));                    /* ★独立母音 → ऑ */
+        EMIT(deva_candra(&d));                    /* ★2 回目は no-op（戻り先が無い） */
+        show("  ऑ（独立母音・2 回目は効かない）→ ", buf, len);
         #undef EMIT
     }
 
@@ -335,6 +356,7 @@ int main(void)
                     case DEVA_OP_ANUSVARA: o = deva_toggle_anusvara(&d); break; \
                     case DEVA_OP_VISARGA:  o = deva_visarga(&d); break; \
                     case DEVA_OP_LONG:     o = deva_long_shift(&d); break; \
+                    case DEVA_OP_CANDRA:   o = deva_candra(&d); break; \
                     /* ★カーソル移動と改行は本体（main.c）の仕事なので、ここでは字が出ない。 \
                        ★★**default に落とさない** —— 落とすと、新しい op を足したときに \
                          黙って別の処理になる（実際に踏んだ: CURSOR が long_shift に \
@@ -402,6 +424,24 @@ int main(void)
             DREL,
         };
         RUN("★中立は प varga / LB は鼻音 → पम", NEUTRAL);
+
+        /* ★★**LT + RS↑ = candra / LT 無しは anusvara**（同じ RS↑ に 2 つ）。
+           ★ここが**打鍵の側**の検査 —— 合成器だけ見ても「LT を見ているか」は分からない。 */
+        static const DStep CANDRA[] = {
+            { 0, 2, 0, -1, 0, 0, 0, 0, 0 },    /* D-pad↓ = 中立(प varga) の 3 番目 → ब */
+            DREL,
+            { 0, -1, 0, -1, 1, 0, 0, 1, 0 },   /* LT + RS↑ → ॉ */
+            DREL,
+        };
+        RUN("★LT + RS↑ = candra → बॉ", CANDRA);
+
+        static const DStep ANUSVARA[] = {
+            { 0, 2, 0, -1, 0, 0, 0, 0, 0 },    /* ब */
+            DREL,
+            { 0, -1, 0, -1, 0, 0, 0, 1, 0 },   /* ★LT 無しの RS↑ は今までどおり anusvara */
+            DREL,
+        };
+        RUN("★LT 無しの RS↑ は anusvara のまま → बं", ANUSVARA);
 
         /* 非 varga: L3 で層に入り、D-pad↑ で य。★1 子音で自動 OFF */
         static const DStep NONVARGA[] = {
