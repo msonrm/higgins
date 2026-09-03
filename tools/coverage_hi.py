@@ -59,18 +59,26 @@ def keywords(forms):
 def has_response(form):
     """その規則が**自分で応答を作れるか**。
 
-    ★偽の警告を消すために要る —— 置換専用（`(मुझसे = आपसे)`）とタグ専用
-      （`(लगता DLIST(/विश्वास))`）は**規則を持たないので NONE が正しい**。
+    ★偽の警告を消すために要る —— NONE が**正しい**規則が 3 種類ある:
+      1. 置換専用（`(मुझसे = आपसे)`）
+      2. タグ専用（`(लगता DLIST(/विश्वास))`）
+      3. ★**前変換専用**（`(करता 1 ((0 आप 0 करता 0) (PRE … (=मैं))) ((0) (NEWKEY)))`）
+         —— 条件が成り立たなければ NEWKEY で落ちるので、単独で叩けば NONE になる。
+         **それが設計どおり**（3 人称の文を書き換えないための条件付き規則）。
     ★eliza_script.classify は DLIST と変換規則が同居した形（`(माँ 2 DLIST(...) ((0) ...))`）を
       DLIST として返し、**transforms を落とす**ので、生の S 式から数える。
     """
     for e in form[1:]:
         if not isinstance(e, list) or not e:
             continue
-        if isinstance(e[0], list):          # ((分解) (再構成) ...)
-            return True
         if isinstance(e[0], str) and e[0].startswith("="):   # (=飛び先)
             return True
+        if not isinstance(e[0], list):
+            continue
+        # ((分解) (再構成) …) —— **地の文を返す再構成が 1 つでもあるか**を見る。
+        for reasm in e[1:]:
+            if isinstance(reasm, list) and reasm and reasm[0] not in ("PRE", "NEWKEY"):
+                return True
     return False
 
 
