@@ -121,12 +121,48 @@ static const Step S_ANJJA[] = {
     REL(380),
 };
 
+/* ★★**LB と十字キーが同じフレームに来なくても壊れない**（2026-09-04・実機の指摘）。
+   「당」のあと「신」を打つとき、ㅅ は **row 7 = LB + ↑**。左手の 2 つが
+   ★**1 フレームずれると `다신` になっていた**（당 の 받침 ㅇ が消える）。
+   ★順序は関係ない —— LB が先でも十字キーが先でも同じように壊れた。
+   ★原因は `rollback_coda` が古いまま使われること。入力層は**받침が実際に
+     付いたかを知らない**ので、成立しない組み合わせで何も出なかったときにずれる。
+   ★上流（GIME）は「付いたときだけ巻き戻し可能」にしている。 */
+static const Step S_DANGSIN_LB[] = {
+    { 0,   3, 3, 1, 0, 0, 1 },     /* ㄷ + ㅏ → 다 */
+    REL(50),
+    { 100, 0, -1, 0, 1, 0, 0 },    /* LT = ㅇ받침 → 당 */
+    REL(150),
+    { 200, 5, -1, 0, 0, 0, 1 },    /* ★LB だけが先に着く（row 5 = ㅁ）*/
+    { 215, 7, -1, 0, 0, 0, 2 },    /*    そのあと ↑ で row 7 = ㅅ */
+    { 230, 7, 0,  1, 0, 1, 2 },    /* RT + RB = ㅣ → 시 */
+    REL(280),
+    { 330, 2, -1, 0, 0, 0, 1 },    /* 받침 ㄴ → 신 */
+    REL(380),
+};
+
+/* ★同じことを逆の順（十字キーが先）でも見る。**どちらでも壊れていた**。 */
+static const Step S_DANGSIN_DPAD[] = {
+    { 0,   3, 3, 1, 0, 0, 1 },
+    REL(50),
+    { 100, 0, -1, 0, 1, 0, 0 },
+    REL(150),
+    { 200, 2, -1, 0, 0, 0, 1 },    /* ★↑ が先（row 2 = ㄴ）*/
+    { 215, 7, -1, 0, 0, 0, 2 },
+    { 230, 7, 0,  1, 0, 1, 2 },
+    REL(280),
+    { 330, 2, -1, 0, 0, 0, 1 },
+    REL(380),
+};
+
 static const Scene SCENES[] = {
     { "안녕",             S_ANNYEONG, (int)(sizeof S_ANNYEONG / sizeof *S_ANNYEONG) },
     { "한국",             S_HANGUK,   (int)(sizeof S_HANGUK / sizeof *S_HANGUK) },
     { "겹받침 앉",        S_ANJ,      (int)(sizeof S_ANJ / sizeof *S_ANJ) },
     { "ㅣ付加 애",        S_AE,       (int)(sizeof S_AE / sizeof *S_AE) },
     { "받침の付け直し",   S_REDO,     (int)(sizeof S_REDO / sizeof *S_REDO) },
+    { "★당신（LB が先）", S_DANGSIN_LB,   (int)(sizeof S_DANGSIN_LB / sizeof *S_DANGSIN_LB) },
+    { "★당신（十字が先）", S_DANGSIN_DPAD, (int)(sizeof S_DANGSIN_DPAD / sizeof *S_DANGSIN_DPAD) },
     { "巻き戻し 마마",    S_MAMA,     (int)(sizeof S_MAMA / sizeof *S_MAMA) },
     { "겹받침も戻す 우울하", S_UUL,   (int)(sizeof S_UUL / sizeof *S_UUL) },
     { "겹받침は残す 앉자", S_ANJJA,   (int)(sizeof S_ANJJA / sizeof *S_ANJJA) },
