@@ -17,7 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from josa import CONTRACTIONS, JOSA_CANON, TAILS
+from josa import CONTRACTIONS, JOSA_CANON, JOSA_SET, TAILS
 from tsunagi_ko import JOSA_FORM
 
 
@@ -47,12 +47,16 @@ def main():
         "/* 語から剥がす 조사・어미。★**長い順**（josa.py が長さで並べている）。",
         "   s = 表層 / c = 代表形（交替する 조사 はここで寄せる）。 */",
         f"enum {{ KO_TAIL_MAX = {tmax}, KO_CANON_MAX = {cmax}, KO_TAIL_N = {len(TAILS)} }};",
-        "static const struct { unsigned char len, clen;",
+        "/* ★`josa` = 조사 か（어미 なら 0）。剥がしてよいかの判定に要る ——",
+        "   조사 は名詞に付くので、残りが 1 音節で辞書にも無いなら語の一部",
+        "   （「사과」の「과」）。★어미 には掛けない（1 音節の語幹は普通）。 */",
+        "static const struct { unsigned char len, clen, josa;",
         "                     unsigned short s[KO_TAIL_MAX], c[KO_CANON_MAX]; } KO_TAIL[] = {",
     ]
     for t in TAILS:
         c = JOSA_CANON.get(t, t)
-        lines.append(f"    {{ {len(t)}, {len(c)}, {u16(t, tmax)}, {u16(c, cmax)} }},   /* {t} */")
+        lines.append(f"    {{ {len(t)}, {len(c)}, {1 if t in JOSA_SET else 0}, "
+                     f"{u16(t, tmax)}, {u16(c, cmax)} }},   /* {t} */")
     lines += [
         "};",
         "",

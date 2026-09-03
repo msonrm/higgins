@@ -92,6 +92,27 @@ EOMI = [
 ]
 
 TAILS = sorted(set(JOSA + EOMI), key=len, reverse=True)
+JOSA_SET = set(JOSA)
+
+
+def josa_ok(tail, rest, vocab):
+    """この 조사 を剥がしてよいか（★어미 は対象外・常に True）。
+
+    ★★**조사 は名詞に付く。** 剥がした残りが**1 音節で辞書にも無い**なら、
+    それは 조사 ではなく**語の一部**。実測（2026-09-03）:
+
+        사과는 → 사 · 와 · 는   ★「사과」が「사」＋「과」に割れ、しかも
+                                 과 → 와 と代表形に寄るので、DOCTOR が
+                                 ★**「사와는 안 받아요」とユーザーの言葉を
+                                 書き換えて引用していた**
+        보이세요 → 보 · 가 · 세요 ／ 많이 → 많 · 가 ／ 다를까요 → 다 · 를 · 까요
+
+    ★**어미 には掛けない** —— 「받아요」の「받」のように、1 音節の語幹は普通なので
+      （そこを止めると受け皿の `요` が働かなくなる）。
+    """
+    if tail not in JOSA_SET:
+        return True
+    return len(rest) != 1 or rest in vocab
 
 # ★人称代名詞の**不規則な縮約**。ここで解かないと規則の側で書けない ——
 #   「제가」は「저 + 가」だが表層が変わるので、素朴に見ると「제」（＝私の）と
@@ -153,6 +174,8 @@ def split_run(run, vocab, maxlen):
         while True:                                    # ② 語尾を剥がしてから引く
             for t in TAILS:
                 if len(head) > len(t) and head.endswith(t):
+                    if not josa_ok(t, head[:-len(t)], vocab):
+                        continue                       # ★조사 ではなく語の一部
                     tails.insert(0, JOSA_CANON.get(t, t))
                     head = head[:-len(t)]
                     break

@@ -7,7 +7,7 @@ CXXFLAGS ?= -std=c++20 -O1 -w
 BUILD     := build
 ELIZA_SRC := vendor/eliza/src/eliza.cpp
 
-.PHONY: all test test-ja test-ja-doctor test-ja-alias test-ko-doctor test-ko-coverage test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-web test-api test-native clean
+.PHONY: all test test-ja test-ja-doctor test-ja-alias test-ja-coverage test-ko-doctor test-ko-coverage test-ko-words test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-ja-ranks test-ko-ranks test-ja-words test-web test-api test-native clean
 
 all: $(BUILD)/eliza
 
@@ -20,7 +20,7 @@ $(BUILD)/eliza: $(ELIZA_SRC)
 #   そこで 2 つ焼いて、両方の結果が揃ってはじめて緑とする:
 #     eliza-count  … 本番と同じロジック + 件数表示   → 「1 件以上あって 0 失敗」
 #     eliza-canary … それにわざと落ちるテストを 1 個 → 「1 失敗」（検査が生きている証拠）
-test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-ko-doctor test-ko-coverage test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-web test-api test-native
+test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-ja-coverage test-ko-doctor test-ko-coverage test-ko-words test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-ja-words test-ja-ranks test-ko-ranks test-web test-api test-native
 	@printf '\n' | $(BUILD)/eliza-count | grep -qE '[1-9][0-9]* assertions' \
 	  || { echo 'FAIL: テストが 1 件も走っていない'; exit 1; }
 	@printf '\n' | $(BUILD)/eliza-count | grep -q '0 failures' \
@@ -106,6 +106,27 @@ test-ko-doctor: $(BUILD)/eliza
 test-ko-coverage: $(BUILD)/eliza
 	@python3 tools/coverage_ko.py doctor/ko.txt
 
+# ★★**語の切り出し**（韓国語）。★日本語と同じ理由で別に持つ ——
+#   応答のゴールデン（ko_doctor）は**二役も 조사 の剥がしすぎも 1 つも踏んでいなかった**。
+#   ★見ているのは 2 つ: 二役（`못`＝釘/できない・`네`＝はい/四つ・`예`＝はい/例）と、
+#   ★★**ユーザーの言葉が書き換わって返らないこと**（「사과」が「사와」になっていた）。
+test-ko-words: $(BUILD)/eliza
+	@python3 tools/josa.py doctor/ko.txt < experiments/ko_words.in \
+	  | $(BUILD)/eliza --nobanner doctor/ko.txt \
+	  | python3 tools/tsunagi_ko.py \
+	  | diff -u experiments/ko_words.out - > /dev/null \
+	  || { echo 'FAIL: 韓国語の語の切り出しゴールデンが一致しない'; \
+	       python3 tools/josa.py doctor/ko.txt < experiments/ko_words.in \
+	         | $(BUILD)/eliza --nobanner doctor/ko.txt | python3 tools/tsunagi_ko.py \
+	         | diff -u experiments/ko_words.out - | head -20; exit 1; }
+	@echo 'OK: 韓国語の語の切り出しゴールデン一致'
+
+# ★★**日本語にも同じ被覆検査を敷いた**（2026-09-03）。★韓国語・ヒンディー語には
+#   前からあったのに**日本語だけ無かった** —— 2026-09-01 に 13 件直したときは
+#   手で数えたので、**同じ穴がもう一度開いても誰も気づかない**状態だった。
+test-ja-coverage: $(BUILD)/eliza
+	@python3 tools/coverage_ja.py doctor/ja.txt
+
 # ★ヒンディー語 DOCTOR のゴールデン。hindi_in（danda を `.` に写す / nukta を分解形へ）
 #   → eliza。★★**出口が無い** —— 日本語の tsunagi は「空白を消す」、韓国語の
 #   tsunagi_ko は「조사 を実現する」という仕事があったが、ヒンディー語にはどちらも無い。
@@ -132,7 +153,32 @@ test-hi-coverage: $(BUILD)/eliza
 #   **その組み合わせを踏んでいなかった**ので緑のままだった。
 #   → 「効いていること」ではなく**値そのもの**を縛る。
 test-hi-ranks:
-	@python3 tools/gen_hi_ranks.py doctor/hi.txt --check experiments/hi_ranks.txt
+	@python3 tools/gen_ranks.py doctor/hi.txt --check experiments/hi_ranks.txt
+
+# ★★**日本語・韓国語にも同じ台を敷いた**（2026-09-03）。rank は目で見えないので、
+#   ★どの言語でも「効いていること」ではなく**値そのもの**を縛る。
+test-ja-ranks:
+	@python3 tools/gen_ranks.py doctor/ja.txt --check experiments/ja_ranks.txt
+
+test-ko-ranks:
+	@python3 tools/gen_ranks.py doctor/ko.txt --check experiments/ko_ranks.txt
+
+# ★★**語の切り出し**（日本語）。★日本語には空白が無いので、分かち書きは
+#   スクリプトのキーワードを辞書にした最長一致で切る —— すると**短いキーワードが
+#   長い語の中から出てくる**（「大丈夫」から `夫`、「しかも」から `かも`）。
+#   ★出てきてしまえば ELIZA には見分けようが無く、**家族の話が無関係な文に返る**。
+#   ★★**応答のゴールデン（ja_doctor / ja_alias）はこの組み合わせを 1 つも踏んでいなかった** ——
+#     だから別に持つ。踏ませる文を並べて、返る文を丸ごと縛る。
+test-ja-words: $(BUILD)/eliza
+	@python3 tools/wakachi.py doctor/ja.txt < experiments/ja_words.in \
+	  | $(BUILD)/eliza --nobanner doctor/ja.txt \
+	  | python3 tools/tsunagi.py \
+	  | diff -u experiments/ja_words.out - > /dev/null \
+	  || { echo 'FAIL: 語の切り出しのゴールデンが一致しない'; \
+	       python3 tools/wakachi.py doctor/ja.txt < experiments/ja_words.in \
+	         | $(BUILD)/eliza --nobanner doctor/ja.txt | python3 tools/tsunagi.py \
+	         | diff -u experiments/ja_words.out - | head -20; exit 1; }
+	@echo 'OK: 語の切り出しゴールデン一致'
 
 # ★★**DOCTOR の性別**（ヒンディー語は 1 人称の動詞が話者の性で変わる）。
 #   `doctor/hi.txt` は**男性に決め打っている**。★はじめは「与格・非人称で避ける」方針で
