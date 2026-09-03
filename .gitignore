@@ -32,6 +32,7 @@ native/tsunagi_ko_tables.h
 native/script.txt
 native/script_en.txt
 native/script_ko.txt
+native/script_hi.txt
 native/higgins
 native/test_reply
 native/test_input
