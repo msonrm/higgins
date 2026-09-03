@@ -7,7 +7,7 @@ CXXFLAGS ?= -std=c++20 -O1 -w
 BUILD     := build
 ELIZA_SRC := vendor/eliza/src/eliza.cpp
 
-.PHONY: all test test-ja test-ja-doctor test-ja-alias test-ko-doctor test-ko-coverage test-web test-api test-native clean
+.PHONY: all test test-ja test-ja-doctor test-ja-alias test-ko-doctor test-ko-coverage test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-web test-api test-native clean
 
 all: $(BUILD)/eliza
 
@@ -20,7 +20,7 @@ $(BUILD)/eliza: $(ELIZA_SRC)
 #   そこで 2 つ焼いて、両方の結果が揃ってはじめて緑とする:
 #     eliza-count  … 本番と同じロジック + 件数表示   → 「1 件以上あって 0 失敗」
 #     eliza-canary … それにわざと落ちるテストを 1 個 → 「1 失敗」（検査が生きている証拠）
-test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-ko-doctor test-ko-coverage test-web test-api test-native
+test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-ko-doctor test-ko-coverage test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-web test-api test-native
 	@printf '\n' | $(BUILD)/eliza-count | grep -qE '[1-9][0-9]* assertions' \
 	  || { echo 'FAIL: テストが 1 件も走っていない'; exit 1; }
 	@printf '\n' | $(BUILD)/eliza-count | grep -q '0 failures' \
@@ -76,7 +76,8 @@ test-ja-alias: $(BUILD)/eliza
 	  | diff -u experiments/ja_alias.out - > /dev/null \
 	  || { echo 'FAIL: 別名ゴールデンが一致しない'; exit 1; }
 	@if pkg-config --exists sdl2 freetype2 2>/dev/null; then \
-	    sh native/build.sh > /dev/null; \
+	    sh native/build.sh > /dev/null \
+	      || { echo 'FAIL: native のビルドが通らない'; sh native/build.sh; exit 1; }; \
 	    ./native/test_reply < experiments/ja_alias.in | grep -v '^$$' > $(BUILD)/alias-native.out; \
 	    grep -v '^$$' experiments/ja_alias.out | diff -u - $(BUILD)/alias-native.out > /dev/null \
 	      || { echo 'FAIL: native が CLI と違う = 組み込みの英語メッセージが出ている疑い'; \
@@ -104,6 +105,46 @@ test-ko-doctor: $(BUILD)/eliza
 #   ★実際に 8 件（제가 / 내가 の 4 形ずつ）を初回で掘り当てた。
 test-ko-coverage: $(BUILD)/eliza
 	@python3 tools/coverage_ko.py doctor/ko.txt
+
+# ★ヒンディー語 DOCTOR のゴールデン。hindi_in（danda を `.` に写す / nukta を分解形へ）
+#   → eliza。★★**出口が無い** —— 日本語の tsunagi は「空白を消す」、韓国語の
+#   tsunagi_ko は「조사 を実現する」という仕事があったが、ヒンディー語にはどちらも無い。
+#   ★入力（experiments/hi_doctor.in）には**合成形の nukta で書いた行が 1 つ**
+#     混ぜてある —— 入口が分解形へ寄せていないと、その行だけ見出しに当たらない。
+test-hi-doctor: $(BUILD)/eliza
+	@python3 tools/hindi_in.py < experiments/hi_doctor.in \
+	  | $(BUILD)/eliza --nobanner doctor/hi.txt \
+	  | diff -u experiments/hi_doctor.out - > /dev/null \
+	  || { echo 'FAIL: ヒンディー語 DOCTOR のゴールデンが一致しない'; exit 1; }
+	@echo 'OK: ヒンディー語 DOCTOR ゴールデン一致'
+
+# ★被覆検査（韓国語版の対）。★こちらは報告を 1 段鋭くしてある ——
+#   **規則を持たない語**（置換専用 `(मुझसे = आपसे)` / タグ専用 `(लगता DLIST(...))`）は
+#   NONE が**正しい**ので、混ぜると本物の穴が雑音に埋もれる。分けて数える。
+test-hi-coverage: $(BUILD)/eliza
+	@python3 tools/coverage_hi.py doctor/hi.txt
+
+# ★★**rank（キーワードの優先度）の値そのものを縛る。**
+#   ★実際に踏んだ（2026-09-03）: rank を一括で書き換える正規表現が、意図した範囲の外
+#   （`हमेशा` / `अक्सर`）まで **1 → 3 に上げていた**。すると `माँ`(2) や `डर`(3) が
+#   「いつも」に負け、**応答が静かに入れ替わる** —— 例外も警告も出ず、返る文は
+#   どれも文法的に正しいので目では分からない。★応答のゴールデンも
+#   **その組み合わせを踏んでいなかった**ので緑のままだった。
+#   → 「効いていること」ではなく**値そのもの**を縛る。
+test-hi-ranks:
+	@python3 tools/gen_hi_ranks.py doctor/hi.txt --check experiments/hi_ranks.txt
+
+# ★★**DOCTOR の性別**（ヒンディー語は 1 人称の動詞が話者の性で変わる）。
+#   `doctor/hi.txt` は**男性に決め打っている**。★はじめは「与格・非人称で避ける」方針で
+#   書いたが、**方針を書いただけで検査を付けなかったので 2 か所で静かに漏れていた** ——
+#   ★方針は検査が無ければ必ず崩れる。
+#   ★見るのは「`मैं` の後ろに来る動詞」だけ。女性形そのものは禁じない
+#     （「क्या यह याद बार-बार आती है」の `आती` は女性名詞 याद に一致している）。
+test-hi-gender: 
+	@python3 tools/check_hi_gender.py doctor/hi.txt > /dev/null \
+	  || { echo 'FAIL: DOCTOR の 1 人称に女性形が混ざっている'; \
+	       python3 tools/check_hi_gender.py doctor/hi.txt; exit 1; }
+	@echo 'OK: DOCTOR の 1 人称はすべて男性形'
 
 # ★web/ の JS 3 本を Node で動かし、C++ 版と同じ応答が出るかを見る。
 #   ブラウザを開かずに Web 版の回帰を守るため。★独立した 2 実装が一致することは
@@ -137,14 +178,21 @@ test-api:
 #      照合する」と書いていたが、**その test_input は存在しなかった**（2026-09-02）。
 #   ★★**韓国語も同じ縛りに入れる**（josa / tsunagi_ko は Python と C の 2 実装）。
 #      規則の表は Python から焼くので（tools/gen_josa.py）、ずれるとしたら手順の側。
+#   ★★**ヒンディー語も同じ**（hindi_in は Python と C の 2 実装）。★こちらは表を
+#      焼いていない（nukta 8 字を両方に手で書いた）ので、**ずれるとしたら表の側**。
 #   ※ SDL / FreeType が無い環境では飛ばす（1 つのシェルで書くこと ―― make は行ごとに
 #      別シェルなので、`|| exit 0` では次の行が止まらない）。
+#   ★★**ビルドの失敗で止める**（2026-09-03 に踏んだ）—— 前は `sh native/build.sh > /dev/null;`
+#      と書いていたので、**ビルドが落ちても古いバイナリで検査が走っていた**。
+#      しかも赤くはなるので、「C と Python がずれた」と読み違える（実際に読み違えた）。
+#      ★出力を捨てるなら、**捨てた先が失敗していないか**を必ず見ること。
 test-native:
 	@if ! pkg-config --exists sdl2 freetype2 2>/dev/null; then \
 	    echo 'SKIP: sdl2 / freetype2 が無い'; \
 	else \
 	    mkdir -p $(BUILD); \
-	    sh native/build.sh > /dev/null; \
+	    sh native/build.sh > /dev/null \
+	      || { echo 'FAIL: native のビルドが通らない'; sh native/build.sh; exit 1; }; \
 	    ./native/test_reply < experiments/ja_doctor.in | grep -v '^$$' > $(BUILD)/native.out; \
 	    grep -v '^$$' experiments/ja_doctor.out | diff -u - $(BUILD)/native.out > /dev/null \
 	      || { echo 'FAIL: native 版が CLI 版と違う応答を返す'; \
@@ -155,11 +203,16 @@ test-native:
 	      || { echo 'FAIL: native の韓国語が CLI 版と違う応答を返す'; \
 	           grep -v '^$$' experiments/ko_doctor.out | diff -u - $(BUILD)/native-ko.out | head -20; \
 	           exit 1; }; \
+	    ./native/test_reply hi < experiments/hi_doctor.in | grep -v '^$$' > $(BUILD)/native-hi.out; \
+	    grep -v '^$$' experiments/hi_doctor.out | diff -u - $(BUILD)/native-hi.out > /dev/null \
+	      || { echo 'FAIL: native のヒンディー語が CLI 版と違う応答を返す'; \
+	           grep -v '^$$' experiments/hi_doctor.out | diff -u - $(BUILD)/native-hi.out | head -20; \
+	           exit 1; }; \
 	    ./native/test_input > $(BUILD)/input.out; \
 	    diff -u experiments/input.out $(BUILD)/input.out > /dev/null \
 	      || { echo 'FAIL: 入力（合成）が期待と違う'; \
 	           diff -u experiments/input.out $(BUILD)/input.out | head -20; exit 1; }; \
-	    echo 'OK: native 版と CLI 版の応答が一致（日本語・韓国語）/ 合成も一致（韓国語・デーヴァナーガリー）'; \
+	    echo 'OK: native 版と CLI 版の応答が一致（日本語・韓国語・ヒンディー語）/ 合成も一致（韓国語・デーヴァナーガリー）'; \
 	fi
 
 clean:

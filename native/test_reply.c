@@ -1,7 +1,9 @@
 /* ★実機に載っているのと同じ wakachi / tsunagi / eliza_bridge を、SDL を開かずに走らせる。
  *   Zenmai の cmd_test_host.c と同じ手 —— 画面を出さずに、**通る道だけ**を検査する。
  *
- *     ./test_reply < experiments/ja_doctor.in
+ *     ./test_reply < experiments/ja_doctor.in     日本語
+ *     ./test_reply ko < experiments/ko_doctor.in  韓国語
+ *     ./test_reply hi < experiments/hi_doctor.in  ヒンディー語
  *     1 行目 = 挨拶、以降 1 行 1 応答。
  *
  * ★これが段階 B の芯。wakachi / tsunagi は Python・JS・C の 3 実装になったので、
@@ -12,6 +14,7 @@
 #include <string.h>
 
 #include "eliza_bridge.h"
+#include "hindi.h"
 #include "josa.h"
 #include "text.h"
 #include "tsunagi.h"
@@ -22,9 +25,13 @@ extern const char _binary_script_txt_start[];
 extern const char _binary_script_txt_end[];
 extern const char _binary_script_ko_txt_start[];
 extern const char _binary_script_ko_txt_end[];
+extern const char _binary_script_hi_txt_start[];
+extern const char _binary_script_hi_txt_end[];
 
-/* ★言語で入口と出口が替わる。中（ELIZA）は同じもの。 */
-static int ko;
+/* ★言語で入口と出口が替わる。中（ELIZA）は同じもの。
+   ★★ヒンディー語は**出口が無い**（tsunagi が Devanagari を素通しするので
+     日本語と同じ道でよい）。入口だけが替わる。 */
+static int ko, hi;
 
 static void print_reply(const char *utf8)
 {
@@ -40,9 +47,12 @@ int main(int argc, char **argv)
 {
     /* ★引数で席を選ぶ（既定 = 日本語）。CLI 版と同じ応答が出るかを言語ごとに見る。 */
     ko = (argc > 1 && argv[1][0] == 'k');
-    const int slot = ko ? HG_KO : HG_JA;
-    const char *start = ko ? _binary_script_ko_txt_start : _binary_script_txt_start;
-    const char *end = ko ? _binary_script_ko_txt_end : _binary_script_txt_end;
+    hi = (argc > 1 && argv[1][0] == 'h');
+    const int slot = ko ? HG_KO : hi ? HG_HI : HG_JA;
+    const char *start = ko ? _binary_script_ko_txt_start
+                       : hi ? _binary_script_hi_txt_start : _binary_script_txt_start;
+    const char *end = ko ? _binary_script_ko_txt_end
+                     : hi ? _binary_script_hi_txt_end : _binary_script_txt_end;
     if (!hg_eliza_init(slot, start, (int)(end - start), 0)) {   /* 0 = 本体と同じ（main.c の注記） */
         fprintf(stderr, "スクリプトが読めない\n");
         return 1;
@@ -59,6 +69,8 @@ int main(int argc, char **argv)
         const int n = u8_to_u16(line, -1, in16, (int)(sizeof in16 / sizeof *in16));
         if (ko)
             josa(in16, n, wa, (int)sizeof wa);
+        else if (hi)
+            hindi_in(in16, n, wa, (int)sizeof wa);
         else
             wakachi(in16, n, wa, (int)sizeof wa);
         print_reply(hg_eliza_response(slot, wa));

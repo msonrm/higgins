@@ -22,8 +22,8 @@ SCRIPT="${SCRIPT:-../doctor/ja.txt}"
 #   訳でも移植でもないので、ここが「原典がそのまま動く」という主張の実物になる。
 SCRIPT_EN="${SCRIPT_EN:-../vendor/eliza/scripts/ELIZA-script-DOCTOR-original-1966-CACM-appendix.txt}"
 SCRIPT_KO="${SCRIPT_KO:-../doctor/ko.txt}"
-# ★ヒンディー語の相手は **まだ仮置き**（doctor/hi.txt の頭書き）—— 入力を実機で
-#   打つために席だけ先に立てている。訳（段 H3）が入ったらここを差し替えるだけ。
+# ★ヒンディー語の相手（2026-09-03 に訳した）。入口は native/hindi.c
+#   （danda を `.` に写す / nukta を分解形へ）。★**出口は無い**。
 SCRIPT_HI="${SCRIPT_HI:-../doctor/hi.txt}"
 
 # ---- 1. 語彙を焼く ----
@@ -100,7 +100,7 @@ done
 # ★配布では実行ファイルの隣、開発機では vendor/ の下。どちらでも解決できるよう両方。
 LDFLAGS="$LDFLAGS -L$HECHIMA_DIR/$ARCH -lhechima -Wl,-rpath,\$ORIGIN:\$ORIGIN/$HECHIMA_DIR/$ARCH"
 
-SRC_C="main.c text.c wakachi.c tsunagi.c josa.c tsunagi_ko.c korean.c devanagari.c conv.c content_stub.c render.c plat_sdl.c glyph_ft.c input.c"
+SRC_C="main.c text.c wakachi.c tsunagi.c josa.c tsunagi_ko.c hindi.c korean.c devanagari.c conv.c content_stub.c render.c plat_sdl.c glyph_ft.c input.c"
 
 OBJS=""
 for f in $SRC_C; do
@@ -123,8 +123,8 @@ $CXX -o "$OUT" $OBJS "$OBJ/eliza_bridge.o" "$OBJ/script_txt.o" "$OBJ/script_en_t
 $CC $CFLAGS -c test_reply.c -o "$OBJ/test_reply.o"
 # shellcheck disable=SC2086
 $CXX -o test_reply "$OBJ/test_reply.o" "$OBJ/text.o" "$OBJ/wakachi.o" "$OBJ/tsunagi.o" \
-     "$OBJ/josa.o" "$OBJ/tsunagi_ko.o" "$OBJ/eliza_bridge.o" "$OBJ/script_txt.o" \
-     "$OBJ/script_en_txt.o" "$OBJ/script_ko_txt.o" $LDCXX
+     "$OBJ/josa.o" "$OBJ/tsunagi_ko.o" "$OBJ/hindi.o" "$OBJ/eliza_bridge.o" "$OBJ/script_txt.o" \
+     "$OBJ/script_en_txt.o" "$OBJ/script_ko_txt.o" "$OBJ/script_hi_txt.o" $LDCXX
 
 # 入力の状態機械だけを SDL 抜きで走らせる小道具（★本体と同じ .o を使う）
 # shellcheck disable=SC2086
