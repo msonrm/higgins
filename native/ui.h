@@ -164,13 +164,13 @@ static const UiText UI[UI_LANG_N] = {
             },
             {   /* 韓国語 */
                 "左手で子音、右手で母音。R2 は母音より先に押す",
-                "十字だけを押すと받침になる（L2 = ㅇ받침）",
+                "十字キーだけを押すと받침になる（L2 = ㅇ받침）",
             },
             {   /* ★ヒンディー語。1 行目に latch の作法（倒すたび切替・中立は प）を
                    まとめ、2 行目は**非 varga 層で L2 を足したとき**にあてる ——
                    表の `य〜` だけでは श ष स ह に届かない（実機の指摘・2026-09-04）。 */
-                "LS で組、十字で子音、右手で母音（倒すたび切替）",
-                "中立は प の組　L2 ＋ RS↑ = ॉ",
+                "LS で組、十字キーで子音、右手で母音",
+                "य〜 の層で L2 を足すと श ष स ह　L2 ＋ RS↑ = ॉ",
             },
         },
     },
@@ -182,32 +182,32 @@ static const UiText UI[UI_LANG_N] = {
             "The DOCTOR translations are part of Higgins",
         },
 
-        .l1 = { "L1 はまやらわ", "L1 6-0", "L1 \u3141\u3142\u3145\u3148\u314E", "L1 " },
-        .l2 = { "L2 small", "L2 Shift", "L2 \u3147 final", "L2 Shift" },
-        .r2 = { "R2 \u3093 \u3092", "R2 0", "R2 \u3151\u3155\u315B\u3160\u3163", "R2 " },
+        .l1 = { "L1 はまやらわ", "L1 6-0", "L1 ㅁㅂㅅㅈㅎ", "L1 " },
+        .l2 = { "L2 small", "L2 Shift", "L2 ㅇ final", "L2 Shift" },
+        .r2 = { "R2 ん を", "R2 0", "R2 ㅑㅕㅛㅠㅣ", "R2 " },
         .r1 = "R1 ",
 
-        .stick_head = { "Stick", "\u2191", "\u2193", "\u2190", "\u2192", "Press" },
+        .stick_head = { "Stick", "↑", "↓", "←", "→", "Press" },
         .stick = {
             {   /* Japanese seat */
-                { "RS", "voicing", "\u3001\u3002", "delete", "long ー", "cancel" },
+                { "RS", "voicing", "、。", "delete", "long ー", "cancel" },
                 { "LS", "prev", "convert", "phrase", "phrase", "send" },
                 { "R2+LS", "", "", "shrink", "grow", "" },
             },
             {   /* English seat */
                 { "RS", "'", "space .,", "delete", "/", "" },
-                { "LS", "\u2191", "\u2193", "\u2190", "\u2192", "send" },
+                { "LS", "↑", "↓", "←", "→", "send" },
                 { "R2+LS", "", "", "", "", "" },
             },
             {   /* Korean seat */
-                { "RS", "asp/tense", "space .?,", "delete", "\u3158 \u315D", "" },
-                { "LS", "\u2191", "\u2193", "\u2190", "\u2192", "send" },
+                { "RS", "asp/tense", "space .?,", "delete", "ㅘ ㅝ", "" },
+                { "LS", "↑", "↓", "←", "→", "send" },
                 { "R2+LS", "", "", "", "", "" },
             },
             {   /* Hindi seat */
-                { "RS", "dot", "space \u0964,", "delete", "long", "" },
-                { "LS", "\u0915~", "\u091F~", "\u0924~", "\u091A~", "\u092F~" },
-                { "R2+LS", "\u2191", "\u2193", "\u2190", "\u2192", "send" },
+                { "RS", "ं ँ", "space ।,", "delete", "long ー", "" },
+                { "LS", "क~", "ट~", "त~", "च~", "य~" },
+                { "R2+LS", "↑", "↓", "←", "→", "send" },
             },
         },
 
@@ -220,15 +220,15 @@ static const UiText UI[UI_LANG_N] = {
             },
             {   /* English seat */
                 "Left hand picks the row, right hand the column",
-                "Tap L2 to cycle the shift (\u21E7 \u2192 \u25B3 \u2192 off)",
+                "Tap L2 to cycle the shift (⇧ → △ → off)",
             },
             {   /* Korean seat */
                 "Left hand consonant, right hand vowel. R2 comes first",
-                "D-pad alone adds a final consonant (L2 = \u3147)",
+                "D-pad alone adds a final consonant (L2 = ㅇ)",
             },
             {   /* Hindi seat */
-                "Left stick picks the varga (tap to switch, neutral = \u092A)",
-                "In the \u092F~ layer, add L2 for \u0936 \u0937 \u0938 \u0939",
+                "LS=varga, D-pad=consonant, right=vowel",
+                "In य~, add L2 for श ष स ह　L2 + RS↑ = ॉ",
             },
         },
     },
@@ -285,8 +285,8 @@ static const UiText UI[UI_LANG_N] = {
                 "십자키만 누르면 받침이 됩니다 (L2 = ㅇ받침)",
             },
             {   /* 힌디어 자리 */
-                "LS=자음군, 십자키=자음, 오른손=모음 (전환식)",
-                "중립은 प 자음군　L2 + RS↑ = ॉ",
+                "LS=자음군, 십자키=자음, 오른손=모음",
+                "य〜 층에서 L2 를 더하면 श ष स ह　L2 + RS↑ = ॉ",
             },
         },
     },
