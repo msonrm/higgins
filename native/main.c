@@ -1614,6 +1614,10 @@ static int help_alphabet(uint16_t *out, int max)
             for (int v = 0; v < 5 && n < max; v++)
                 if (deva_vowel_char(v, lt))
                     out[n++] = deva_vowel_char(v, lt);
+        /* ★肩に出る印（halant / visarga / nukta）も同じ帯に乗るので一緒に測る。 */
+        for (int m = DEVA_MARK_HALANT; m <= DEVA_MARK_CANDRA && n < max; m++)
+            if (deva_mark_char(m))
+                out[n++] = deva_mark_char(m);
         return n;
     }
     for (int row = 0; row < 10 && n < max; row++) {
@@ -1842,11 +1846,20 @@ static void help_draw_deva(int p, const DevaMachine *hm)
     const int dpad = pad_deva_dpad(p);
     const int vowel = pad_vowel(p);
 
+    /* ★★**R1 と R2 は L2 で意味が変わる**ので、札も変える（実機の指摘・2026-09-04）——
+       ★「押している状態がそのまま図に出る」の延長で、**説明文に落とさずに済む**:
+         R1 = 母音 ओ / **L2 と一緒なら nukta ़**、R2 = halant ् / **L2 と一緒なら visarga ः**。
+       ★字は窓から引く（`deva_mark_char`）—— 図が字を持つと、合成器を直したときに
+         **図だけ古くなる**。 */
     fill_rows(hbar, 0, BASE, OPT_BG);                  /* ★外側が 1、内側が 2 */
     help_shoulder(HLX, u->l1[seat], deva_stop_char(hm, lt, 4), (p & BTN_L1) != 0,
                        u->l2[seat], 0, lt);
-    help_shoulder(HRX, u->r2[seat], 0, (p & BTN_R2) != 0,
-                       u->r1, deva_vowel_char(0, lt), (p & BTN_R1) != 0);
+    help_shoulder(HRX, u->r2[seat],
+                       deva_mark_char(lt ? DEVA_MARK_VISARGA : DEVA_MARK_HALANT),
+                       (p & BTN_R2) != 0,
+                       u->r1,
+                       lt ? deva_mark_char(DEVA_MARK_NUKTA) : deva_vowel_char(0, 0),
+                       (p & BTN_R1) != 0);
     help_band(HY_SHOULDER, 1);
 
     fill_rows(hbar, 0, BASE, OPT_BG);

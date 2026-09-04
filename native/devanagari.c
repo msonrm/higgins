@@ -104,6 +104,22 @@ DevaOut deva_vowel(Deva *d, unsigned short v)
     return o;
 }
 
+/* 打ち方の図用: 印の字（halant / nukta / visarga / anusvara / chandrabindu / candra）。
+ * ★★**合成器が使うのと同じ定数から返す**（`gp_cell` と同じ趣旨の窓）——
+ *   図が字を持つと、片方を直したときに**図だけ古くなる**。
+ * ★candra は母音で ॉ / ॅ に分かれるので、代表（ॉ）を返す。
+ */
+unsigned short deva_mark_char(int mark)
+{
+    switch (mark) {
+    case DEVA_MARK_HALANT:  return VIRAMA;
+    case DEVA_MARK_NUKTA:   return NUKTA;
+    case DEVA_MARK_VISARGA: return VISARGA;
+    case DEVA_MARK_CANDRA:  return DEVA_VOWEL_CANDRA[0][1];   /* ★表から引く（ॉ） */
+    default:                return 0;
+    }
+}
+
 /* 明示 halant。★子音の直後だけ意味を持つ。 */
 DevaOut deva_halant(Deva *d)
 {

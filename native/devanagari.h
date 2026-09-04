@@ -59,6 +59,13 @@ DevaOut deva_candra(Deva *d);                           /* ॉ / ॅ（英語由
 DevaOut deva_backspace(Deva *d);
 void    deva_commit(Deva *d);
 
+/* 打ち方の図に出す印。★★**入力層の `DEVA_OP_*` とは別の enum** —— あちらは
+   「何をせよ」という指示で、こちらは「どの字を見せるか」。層が違うものを
+   同じ語彙で受けると、片方が増えたときにもう片方が黙って狂う。 */
+enum { DEVA_MARK_HALANT, DEVA_MARK_NUKTA, DEVA_MARK_VISARGA, DEVA_MARK_CANDRA };
+/* 0 = 知らない印。★**合成器と同じ定数から返す窓**（devanagari.c の頭書き）。 */
+unsigned short deva_mark_char(int mark);
+
 /* 字の分類（U+0900..U+097F）。★上流の判定と同じ範囲。 */
 int deva_is_consonant(unsigned short c);
 int deva_is_matra(unsigned short c);
