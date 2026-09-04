@@ -1872,7 +1872,40 @@ Z の長文で見えた。`push_text` が **`head > 0x7F` なら「どこで折�
 関数の頭へ移す」と直しかけたが、**Android には既に順序に依存しない答えがあった**。
 ★4 実装あるということは、**どれか 1 つが既に解いている可能性がある**。
 
-## ★次にやること —— **積んである残件は無い**（2026-09-04）
+## ★★次にやること —— **PortMaster への公開申請**（2026-09-04 に着手）
+
+★**順序は Zenmai が先**（msonrm さんの判断）—— 依存が SDL2 + FreeType だけで、
+**glibc の問題だけを解けばよい**。★申請の手順を 1 本目で覚えてから Higgins に進む。
+
+### 要件（[packaging.html](https://portmaster.games/packaging.html) / 2026-09-04 に実測）
+
+`port.json`（version 2）・`README.md`・`screenshot.png`・`gameinfo.xml`・
+`Port Name.sh`・`portname/`（本体 ＋ `licenses/`）。★**Higgins も Zenmai も
+ここは既に満たしている**（`.sh` は `control.txt` / `get_controls` /
+`pm_platform_helper` / `pm_finish` の作法どおり）。
+
+### ★★残っている障害 3 つ
+
+| | 中身 |
+|---|---|
+| ① **glibc** | ★開発機は trixie（**2.41**）、ArkOS / AmberELEC は **2.31**。★**両方に効く** —— podman で `arm64v8/debian:bullseye`（2.31）を立てて焼き直す |
+| ② **HarfBuzz** | ★Higgins のみ。各 CFW にあるとは限らない → `src/harfbuzz.cc`（unity ビルド）を vendoring して静的リンクするか、実機で借りられるか確かめる |
+| ③ **テストの記録** | ★★**AmberELEC / ArkOS / ROCKNIX / muOS で試した記録を Discord の #testing-n-dev に出す**。**記録の無い PR は却下される**。実機が要るのでここは人の仕事 |
+
+### ★Zenmai 側の宿題（実機の指摘・2026-09-04）
+
+★**Start メニューに「やめる / QUIT」を足す** —— コマンドでやめられるのは確かだが、
+★**気軽にやめられないゲームは良くない**（msonrm さん）。セーブはコマンドのままでよい。
+
+- ★★**コマンドとして投げる**（`feed_cmd`）—— quit のフラグを直接立てず、原作の QUIT を
+  走らせて「本当にやめますか」を出す。★**原作がそのまま動く**が Zenmai の主張なので省かない
+- ★投げる語は**語彙の原簿から引く**（日本語 = 「やめる」/ 英語 = `quit`）——
+  `gen_ui.py` がシステムコマンド一覧で既にそうしている。書き写すと表を直したとき古くなる
+- ★送信処理が対話ループ 2 つ（ja / en）にあるので、**先に関数へ切り出して**
+  台本で挙動不変を確かめてから繋ぐ（Higgins の `apply_frame` と同じ手順）
+- ★回帰は `native/quit_ja.script` / `quit_en.script` / `test-quit.sh` が既にある
+
+## ★~~次にやること~~ —— **打ち方の図まわりは終わった**（2026-09-04）
 
 ~~1. varga の latch~~ ／ ~~2. 折返し~~ ／ ~~2'. candra~~ ／ ~~3. 日本語・韓国語の監査~~
 —— **4 つとも済**（それぞれ下の節）。あわせて実機から出た 3 件も片づけた。
