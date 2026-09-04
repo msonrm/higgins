@@ -637,10 +637,15 @@ static void draw_input(const uint16_t *s, int n, int car,
     const int inner = seat == SEAT_EN ? EN_IND_W : (iw < 24 ? 24 : iw);
     const int kx = W - MARGIN - inner;
     const int iy = bufh - BASE;
-    for (int c = kx - 3; c <= kx + inner + 2; c++)
-        box[iy][c] = box[iy + BASE - 1][c] = DIM;
-    for (int r = 0; r < BASE; r++)
-        box[iy + r][kx - 3] = box[iy + r][kx + inner + 2] = DIM;
+    /* ★枠は**右を 1px 内へ、上を 1px 外へ**（実機の指摘・2026-09-04）——
+       器の余りは下に偏っている（`ink_dy` の頭書き）ので、枠を器ちょうどに引くと
+       ★**中身が右下に寄って見える**。★中身（idy）は動かさない —— 動かすのは枠。 */
+    const int y0 = iy - 1, y1 = iy + BASE - 1;
+    const int x0 = kx - 3, x1 = kx + inner + 1;
+    for (int c = x0; c <= x1; c++)
+        box[y0][c] = box[y1][c] = DIM;
+    for (int r = y0; r <= y1; r++)
+        box[r][x0] = box[r][x1] = DIM;
     /* ★縦は **ink で**中央へ（ink_dy の頭書き）—— 器の余りは下に偏っているので、
        器の上端に置くと**中身が上に寄って見える**（実機の指摘・2026-09-03）。
        ★印は枠の外だが、同じ器に同じ規則で置けば箱の中身と目線が揃う。 */
