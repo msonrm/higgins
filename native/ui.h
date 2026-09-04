@@ -27,8 +27,15 @@
    ★UI 言語をヒンディー語まで増やすなら、先に図と表を `shape_run` の経路へ移すこと。 */
 enum { UI_JA = 0, UI_EN = 1, UI_KO = 2, UI_LANG_N = 3 };
 
-/* ★並びは main.c の SEAT_*（日本語 / 英語 / 韓国語 / ヒンディー語）と同じ。 */
-enum { UI_SEAT_N = 4 };
+/* ★★**席（話す相手）。** もとは main.c にあったが、★**席ごとの文言を持つのはここ**
+   なので、名前で並べられるようにこちらへ移した（2026-09-04）。
+   ★★**並びは「英語 → 日本語 → 韓国語 → ヒンディー語」** —— 起動画面の一覧も
+   Select の巡回も**同じ順**にするため（実機の指摘 ―― 2 つの順が違うと混乱する）。
+   ★原典が英語なので英語が先頭（Zenmai と同じ判断）。
+   ★★**この enum の値を変えても中身がずれない**ように、下の配列は**名前で書く**
+   （designated initializer）—— 位置で書くと、並べ替えた日に**黙って別の席の説明が出る**。 */
+enum { SEAT_EN = 0, SEAT_JA = 1, SEAT_KO = 2, SEAT_HI = 3, SEAT_N = 4 };
+enum { UI_SEAT_N = SEAT_N };
 
 /* 図と表の下に置く説明行。★**図にも表にも出せないものだけ**をここに書く。 */
 enum { UI_NOTE_N = 2 };
@@ -50,7 +57,8 @@ enum { UI_STK_COLS = 6, UI_STK_ROWS = 3 };
    ★★`हिन्दी` は**合字を持つ**（न् + द）ので、図と表の描画を `shape_run` の経路へ
    移してから出している —— `draw24` を並べるだけでは正しい絵にならない。 */
 static const char *const UI_SEAT_NAME[UI_SEAT_N] = {
-    "日本語", "English", "한국어", "हिन्दी",
+    [SEAT_JA] = "日本語", [SEAT_EN] = "English",
+    [SEAT_KO] = "한국어", [SEAT_HI] = "हिन्दी",
 };
 
 static const char *const UI_BOOT_TITLE = "Higgins";
@@ -103,7 +111,10 @@ typedef struct {
     const char *stick_head[UI_STK_COLS];
     const char *stick[UI_SEAT_N][UI_STK_ROWS][UI_STK_COLS];
     const char *note[UI_SEAT_N][UI_NOTE_N];
-    /* 起動画面の案内。★選んだ席の UI 言語で出す（席の名前は UI_SEAT_NAME）。 */
+    /* 起動画面の案内 2 行。★選んだ席の UI 言語で出す（席の名前は UI_SEAT_NAME）。
+       ★★**Select を先に置く** —— 選択肢のすぐ下なので、「ここで選んでも、あとで
+       替えられる」が続きとして読める。 */
+    const char *boot_sel;
     const char *boot_hint;
 } UiText;
 
@@ -117,30 +128,33 @@ static const UiText UI[UI_LANG_N] = {
         },
 
         /* ★ヒンディー語の L1 だけ前置き（鼻音の字が varga で替わる）。 */
-        .l1 = { "L1 はまやらわ", "L1 6〜0", "L1 ㅁㅂㅅㅈㅎ", "L1 " },
-        .l2 = { "L2 小書き", "L2 シフト", "L2 ㅇ받침", "L2 シフト" },
-        .r2 = { "R2 ん を", "R2 0", "R2 ㅑㅕㅛㅠㅣ", "R2 " },
+        .l1 = { [SEAT_JA] = "L1 はまやらわ", [SEAT_EN] = "L1 6〜0",
+                [SEAT_KO] = "L1 ㅁㅂㅅㅈㅎ", [SEAT_HI] = "L1 " },
+        .l2 = { [SEAT_JA] = "L2 小書き", [SEAT_EN] = "L2 シフト",
+                [SEAT_KO] = "L2 ㅇ받침", [SEAT_HI] = "L2 シフト" },
+        .r2 = { [SEAT_JA] = "R2 ん を", [SEAT_EN] = "R2 0",
+                [SEAT_KO] = "R2 ㅑㅕㅛㅠㅣ", [SEAT_HI] = "R2 " },
         .r1 = "R1 ",
 
         .stick_head = { "スティック", "↑", "↓", "←", "→", "押し込み" },
         .stick = {
-            {   /* 日本語。★左スティックは**変換中の役**を書く（そちらが主）。 */
+            [SEAT_JA] = {   /* 日本語。★左スティックは**変換中の役**を書く（そちらが主）。 */
                 { "RS", "濁点", "、。", "BS", "長音 ー", "取消" },
                 { "LS", "前候補", "変換", "文節", "文節", "送信" },
                 { "R2+LS", "", "", "短く", "長く", "" },
             },
-            {   /* 英語。★変換が無いので左はキャレットの向きそのもの
+            [SEAT_EN] = {   /* 英語。★変換が無いので左はキャレットの向きそのもの
                    （「移動」と書くと**何が動くのか**が分からない ―― 実機の指摘）。 */
                 { "RS", "'", "空白 .,", "BS", "/", "" },
                 { "LS", "↑", "↓", "←", "→", "送信" },
                 { "R2+LS", "", "", "", "", "" },
             },
-            {   /* 韓国語。★→ は複合母音（ㅗ→ㅘ / ㅜ→ㅝ）。 */
+            [SEAT_KO] = {   /* 韓国語。★→ は複合母音（ㅗ→ㅘ / ㅜ→ㅝ）。 */
                 { "RS", "濃/激", "空白 .?,", "BS", "ㅘ ㅝ", "" },
                 { "LS", "↑", "↓", "←", "→", "送信" },
                 { "R2+LS", "", "", "", "", "" },
             },
-            {   /* ★★ヒンディー語だけ左スティックが**組（varga）の latch**。
+            [SEAT_HI] = {   /* ★★ヒンディー語だけ左スティックが**組（varga）の latch**。
                    ★「組」とだけ書いても伝わらない（実機の指摘）ので、**その組の
                    代表の子音に「〜」を付ける** —— क〜 = क の組（क ख ग घ ङ）。
                    ★押し込みは非 varga 層（य र ल व）なので同じ書き方で य〜。
@@ -151,22 +165,23 @@ static const UiText UI[UI_LANG_N] = {
             },
         },
 
-        .boot_hint = "話しているとき Start でメニュー",
+        .boot_sel = "セレクトボタンで相手を替えられます",
+        .boot_hint = "スタートボタンでメニュー",
 
         .note = {
-            {   /* 日本語 */
+            [SEAT_JA] = {   /* 日本語 */
                 "左手で行、右手で段。同時に押すと 1 字入る",
                 "L2 ＋ R2 で「っ」",
             },
-            {   /* 英語 */
+            [SEAT_EN] = {   /* 英語 */
                 "左手で行、右手で列。1 つの行に 3〜4 字ある",
                 "L2 を単押しするたびシフトが回る（⇧ → △ → なし）",
             },
-            {   /* 韓国語 */
+            [SEAT_KO] = {   /* 韓国語 */
                 "左手で子音、右手で母音。R2 は母音より先に押す",
                 "十字キーだけを押すと받침になる（L2 = ㅇ받침）",
             },
-            {   /* ★ヒンディー語。1 行目に latch の作法（倒すたび切替・中立は प）を
+            [SEAT_HI] = {   /* ★ヒンディー語。1 行目に latch の作法（倒すたび切替・中立は प）を
                    まとめ、2 行目は**非 varga 層で L2 を足したとき**にあてる ——
                    表の `य〜` だけでは श ष स ह に届かない（実機の指摘・2026-09-04）。 */
                 "LS で組、十字キーで子音、右手で母音",
@@ -182,51 +197,55 @@ static const UiText UI[UI_LANG_N] = {
             "The DOCTOR translations are part of Higgins",
         },
 
-        .l1 = { "L1 はまやらわ", "L1 6-0", "L1 ㅁㅂㅅㅈㅎ", "L1 " },
-        .l2 = { "L2 small", "L2 Shift", "L2 ㅇ final", "L2 Shift" },
-        .r2 = { "R2 ん を", "R2 0", "R2 ㅑㅕㅛㅠㅣ", "R2 " },
+        .l1 = { [SEAT_JA] = "L1 はまやらわ", [SEAT_EN] = "L1 6-0",
+                [SEAT_KO] = "L1 ㅁㅂㅅㅈㅎ", [SEAT_HI] = "L1 " },
+        .l2 = { [SEAT_JA] = "L2 small", [SEAT_EN] = "L2 Shift",
+                [SEAT_KO] = "L2 ㅇ final", [SEAT_HI] = "L2 Shift" },
+        .r2 = { [SEAT_JA] = "R2 ん を", [SEAT_EN] = "R2 0",
+                [SEAT_KO] = "R2 ㅑㅕㅛㅠㅣ", [SEAT_HI] = "R2 " },
         .r1 = "R1 ",
 
         .stick_head = { "Stick", "↑", "↓", "←", "→", "Press" },
         .stick = {
-            {   /* Japanese seat */
+            [SEAT_JA] = {   /* Japanese seat */
                 { "RS", "voicing", "、。", "BS", "long ー", "cancel" },
                 { "LS", "prev", "convert", "phrase", "phrase", "send" },
                 { "R2+LS", "", "", "shrink", "grow", "" },
             },
-            {   /* English seat */
+            [SEAT_EN] = {   /* English seat */
                 { "RS", "'", "space .,", "BS", "/", "" },
                 { "LS", "↑", "↓", "←", "→", "send" },
                 { "R2+LS", "", "", "", "", "" },
             },
-            {   /* Korean seat */
+            [SEAT_KO] = {   /* Korean seat */
                 { "RS", "asp/tense", "space .?,", "BS", "ㅘ ㅝ", "" },
                 { "LS", "↑", "↓", "←", "→", "send" },
                 { "R2+LS", "", "", "", "", "" },
             },
-            {   /* Hindi seat */
+            [SEAT_HI] = {   /* Hindi seat */
                 { "RS", "ं ँ", "space ।,", "BS", "long vowel", "" },
                 { "LS", "क~", "ट~", "त~", "च~", "य~" },
                 { "R2+LS", "↑", "↓", "←", "→", "send" },
             },
         },
 
+        .boot_sel = "SELECT changes who you talk to",
         .boot_hint = "Press START for the menu",
 
         .note = {
-            {   /* Japanese seat */
+            [SEAT_JA] = {   /* Japanese seat */
                 "Left hand picks the row, right hand the vowel",
                 "L2 + R2 gives the small tsu",
             },
-            {   /* English seat */
+            [SEAT_EN] = {   /* English seat */
                 "Left hand picks the row, right hand the column",
                 "Tap L2 to cycle the shift (⇧ → △ → off)",
             },
-            {   /* Korean seat */
+            [SEAT_KO] = {   /* Korean seat */
                 "Left hand consonant, right hand vowel. R2 comes first",
                 "D-pad alone adds a final consonant (L2 = ㅇ)",
             },
-            {   /* Hindi seat */
+            [SEAT_HI] = {   /* Hindi seat */
                 "LS=varga, D-pad=consonant, right=vowel",
                 "In य~, add L2 for श ष स ह　L2 + RS↑ = ॉ",
             },
@@ -240,51 +259,55 @@ static const UiText UI[UI_LANG_N] = {
             "DOCTOR 번역도 Higgins에 포함됩니다",
         },
 
-        .l1 = { "L1 はまやらわ", "L1 6-0", "L1 ㅁㅂㅅㅈㅎ", "L1 " },
-        .l2 = { "L2 작은 가나", "L2 시프트", "L2 ㅇ받침", "L2 시프트" },
-        .r2 = { "R2 ん を", "R2 0", "R2 ㅑㅕㅛㅠㅣ", "R2 " },
+        .l1 = { [SEAT_JA] = "L1 はまやらわ", [SEAT_EN] = "L1 6-0",
+                [SEAT_KO] = "L1 ㅁㅂㅅㅈㅎ", [SEAT_HI] = "L1 " },
+        .l2 = { [SEAT_JA] = "L2 작은 가나", [SEAT_EN] = "L2 시프트",
+                [SEAT_KO] = "L2 ㅇ받침", [SEAT_HI] = "L2 시프트" },
+        .r2 = { [SEAT_JA] = "R2 ん を", [SEAT_EN] = "R2 0",
+                [SEAT_KO] = "R2 ㅑㅕㅛㅠㅣ", [SEAT_HI] = "R2 " },
         .r1 = "R1 ",
 
         .stick_head = { "스틱", "↑", "↓", "←", "→", "누름" },
         .stick = {
-            {   /* 일본어 자리 */
+            [SEAT_JA] = {   /* 일본어 자리 */
                 { "RS", "탁점", "、。", "BS", "장음 ー", "취소" },
                 { "LS", "이전", "한자 변환", "문절", "문절", "보내기" },
                 { "R2+LS", "", "", "축소", "확대", "" },
             },
-            {   /* 영어 자리 */
+            [SEAT_EN] = {   /* 영어 자리 */
                 { "RS", "'", "공백 .,", "BS", "/", "" },
                 { "LS", "↑", "↓", "←", "→", "보내기" },
                 { "R2+LS", "", "", "", "", "" },
             },
-            {   /* 한국어 자리 */
+            [SEAT_KO] = {   /* 한국어 자리 */
                 { "RS", "격/경음", "공백 .?,", "BS", "ㅘ ㅝ", "" },
                 { "LS", "↑", "↓", "←", "→", "보내기" },
                 { "R2+LS", "", "", "", "", "" },
             },
-            {   /* 힌디어 자리 */
+            [SEAT_HI] = {   /* 힌디어 자리 */
                 { "RS", "ं ँ", "공백 ।,", "BS", "장모음", "" },
                 { "LS", "क〜", "ट〜", "त〜", "च〜", "य〜" },
                 { "R2+LS", "↑", "↓", "←", "→", "보내기" },
             },
         },
 
-        .boot_hint = "대화 중 START 로 메뉴",
+        .boot_sel = "SELECT 로 상대를 바꿉니다",
+        .boot_hint = "START 로 메뉴",
 
         .note = {
-            {   /* 일본어 자리 */
+            [SEAT_JA] = {   /* 일본어 자리 */
                 "왼손은 행, 오른손은 단. 동시에 누르면 한 글자",
                 "L2 + R2 = 작은 っ",
             },
-            {   /* 영어 자리 */
+            [SEAT_EN] = {   /* 영어 자리 */
                 "왼손은 행, 오른손은 열. 한 행에 3~4 글자",
                 "L2 를 한 번씩 누르면 시프트가 순환 (⇧ → △ → 없음)",
             },
-            {   /* 한국어 자리 */
+            [SEAT_KO] = {   /* 한국어 자리 */
                 "왼손은 자음, 오른손은 모음. R2 를 먼저 누르세요",
                 "십자키만 누르면 받침이 됩니다 (L2 = ㅇ받침)",
             },
-            {   /* 힌디어 자리 */
+            [SEAT_HI] = {   /* 힌디어 자리 */
                 "LS=자음군, 십자키=자음, 오른손=모음",
                 "य〜 층에서 L2 를 더하면 श ष स ह　L2 + RS↑ = ॉ",
             },

@@ -78,7 +78,9 @@ static void paint_screen(uint16_t color)
      「子音行 × 母音」の同時押しだが、デーヴァナーガリーは「LS の latch × D-pad」で、
      両スティックとも他の役に取られる。だから物理入力の解釈から**別の道**になる
      （`GpFrameDeva` / `gp_step_deva`。input.h の注記）。 */
-enum { SEAT_JA = 0, SEAT_EN = 1, SEAT_KO = 2, SEAT_HI = 3, SEAT_N = 4 };
+/* ★★**席の enum は `ui.h` にある**（席ごとの文言を持つのがあちらなので）。
+   ★並びは「英語 → 日本語 → 韓国語 → ヒンディー語」で、★**起動画面の一覧も
+   Select の巡回もこの順**（実機の指摘 ―― 2 つの順が違うと混乱する）。 */
 static int seat;
 
 /* 画面の文言に使う言語（`ui.h` の添字）。★**席とは別の軸**で、いまは日本語で固定。
@@ -2158,8 +2160,10 @@ static int boot_dy(void)
         n += u8_to_u16(UI_BOOT_WORK, -1, t + n, max - n);
         for (int i = 0; i < UI_SEAT_N; i++)
             n += u8_to_u16(UI_SEAT_NAME[i], -1, t + n, max - n);
-        for (int i = 0; i < UI_LANG_N; i++)
+        for (int i = 0; i < UI_LANG_N; i++) {
+            n += u8_to_u16(UI[i].boot_sel, -1, t + n, max - n);
             n += u8_to_u16(UI[i].boot_hint, -1, t + n, max - n);
+        }
         dy = ink_dy(t, n);
         done = 1;
     }
@@ -2174,22 +2178,25 @@ static void boot_line(int y, const char *s, uint16_t color, int on)
 }
 
 /* ★選択肢が 4 つ（席）なので、案内との間を空け直した。 */
-enum { BY_TITLE = 84, BY_SUB = 124, BY_RULE = 162, BY_WORK = 184,
-       BY_LANG = 236, BY_LANG_LEAD = 38, BY_HINT = 412 };
+enum { BY_TITLE = 76, BY_SUB = 116, BY_RULE = 154, BY_WORK = 174,
+       BY_LANG = 224, BY_LANG_LEAD = 38, BY_SEL = 382, BY_HINT = 414 };
 
+/* sel = 席（★enum の並びがそのまま画面の並び）。 */
 static void boot_choices(int sel)
 {
     for (int i = 0; i < UI_SEAT_N; i++)
         boot_line(BY_LANG + i * BY_LANG_LEAD, UI_SEAT_NAME[i],
                   i == sel ? OPT_BG : INK, i == sel);
     /* ★案内は**選んだ席の UI 言語**で出す（何語で読むことになるかが分かる）。 */
-    boot_line(BY_HINT, UI[ui_lang_for_seat(sel)].boot_hint, DIM, 0);
+    const UiText *u = &UI[ui_lang_for_seat(sel)];
+    boot_line(BY_SEL, u->boot_sel, DIM, 0);
+    boot_line(BY_HINT, u->boot_hint, DIM, 0);
 }
 
 /* 戻り値 = 選んだ**席**（UI 言語はそこから導く）。 */
 static int lang_menu(void)
 {
-    int sel = SEAT_JA;
+    int sel = SEAT_EN;                 /* ★先頭 ＝ 原典の英語 */
     hbar_dy = boot_dy();
     paint_screen(OPT_BG);
     boot_line(BY_TITLE, UI_BOOT_TITLE, ACCENT, 0);
@@ -2226,11 +2233,11 @@ static int lang_menu(void)
         ls_dirs(axes, ls);
         int moved = 0;
         if ((edge & BTN_UP) || (ls[2] && !lsp[2])) {
-            sel = (sel + UI_SEAT_N - 1) % UI_SEAT_N;
+            sel = (sel + SEAT_N - 1) % SEAT_N;
             moved = 1;
         }
         if ((edge & BTN_DOWN) || (ls[3] && !lsp[3])) {
-            sel = (sel + 1) % UI_SEAT_N;
+            sel = (sel + 1) % SEAT_N;
             moved = 1;
         }
         for (int i = 0; i < 4; i++)
