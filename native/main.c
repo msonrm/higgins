@@ -59,8 +59,14 @@ extern const char _binary_script_hi_txt_end[];
 enum { BAND_H = 24 };
 static uint16_t band[BAND_H][W];
 
+/* ★★**いま塗ってある画面の地色。** 入力欄は本文にも「文字入力方法」にも出るので、
+   ★**欄だけ別の地色だと浮く**（実機の指摘・2026-09-04 ―― 藍の画面に黒い欄が残った）。
+   ★塗った色をそのまま覚えるので、画面を足しても欄の側は直さなくてよい。 */
+static uint16_t screen_bg = BG;
+
 static void paint_screen(uint16_t color)
 {
+    screen_bg = color;
     fill_rows(band, 0, BAND_H, color);
     for (int y = 0; y < H; y += BAND_H)
         gp0_upload(0, y, W, BAND_H, band[0]);
@@ -570,7 +576,7 @@ static void draw_input(const uint16_t *s, int n, int car,
     if (top < 0)
         top = 0;
 
-    fill_rows(box, 0, bufh, BG);
+    fill_rows(box, 0, bufh, screen_bg);
     /* ★「＞」は窓の先頭行に置く（行が流れても目印が動かない）。
        ★上に隠れている行があるときは**薄く**する —— 遡れることが分かる最小の印。 */
     draw24(box, bufh, MARGIN, BOX_GAP, 0xFF1E, top ? DIM : ACCENT);
@@ -1040,7 +1046,7 @@ static int menu_open(void)
         /* ★どのフェイスボタンでも決まる（Zenmai と同じ作法。画面には書かない） */
         if (edge & (BTN_CIR | BTN_X | BTN_TRI | BTN_SQ | BTN_L3))
             return sel;
-        if (edge & BTN_START)          /* Start で開いて Start で閉じる */
+        if (edge & BTN_START)          /* ★Start で開いて Start で閉じる（項目は要らない） */
             return UI_MENU_CONT;
     }
 }
@@ -1468,7 +1474,7 @@ static int apply_frame(int p, const uint8_t axes[4], int fields, int *rowp)
  *
  * ★**本文を持たない。押している状態がそのまま図に出る**のが説明になる
  *   （Zenmai の `help_draw` から。並びは**実物のコントローラのまま** ——
- *   上から L2 / L1 / 十字と面ボタン。離しすぎると 1 行の字の並びに見えるので、
+ *   上が肩、下が十字と面ボタン。離しすぎると 1 行の字の並びに見えるので、
  *   左右のボタンは中心へ寄せる）。
  * ★★**札は入力表から引く**（`gp_cell` / `ko_vowel_char` / `deva_stop_char`）。
  *   写して並べると、**図に出ている字と実際に入る字がずれても誰も気づけない**
@@ -1476,24 +1482,37 @@ static int apply_frame(int p, const uint8_t axes[4], int fields, int *rowp)
  * ★この頁だけは**面ボタンで戻らない**。面ボタンは字を出すボタンそのものなので、
  *   出口は Start の 1 つに絞る。
  * ★★**席で骨格が替わる。** 日本語・英語・韓国語は「左手＝行 / 右手＝段」で同じだが、
- *   ヒンディー語だけは**左スティックで組（varga）を latch し、十字でその中を選ぶ** ——
- *   だから左群の見出しが「行」ではなく「いま選んでいる組の 5 つ」になる。
- *   ★latch は図の中でも動かす（倒すと 5 字がまるごと替わる）—— ★ただし
- *   **回す規則は input.c のもの**を借りて、出力だけ捨てる。図が独自に回すと、
- *   規則が 2 か所になって必ずずれる。
+ *   ヒンディー語だけは**左スティックで組（varga）を latch し、十字でその中を選ぶ**。
+ *
+ * ★★**画面の作りは実機が決めた**（2026-09-04 の 5 点）:
+ *   題は要らない（メニューの項目名で分かるし、席は図の字を見れば分かる）／
+ *   Select と Start の札も要らない（説明の要らないボタン）／**肩は横に並べる**／
+ *   スティックは**表**にする／地色は欄まで含めて 1 色。
+ *   ★★**スティックが表になったのが大きい** —— 左右 × 5 方向は**同じ形の情報が
+ *   10 個**で、文に流し込むと「どれがどれか」を読み手が組み直すことになる。
  */
-/* ★**Select と Start の札は置かない**（実機の指摘・2026-09-04）—— どちらも
-   ゲーム機の作法として説明が要らないボタンで、1 行使うほどの中身が無い。
-   空いたぶんは**試し打ち**に回す（画面の一番下、本文と同じ欄）。 */
 enum { HLX = 168, HRX = 472, HDX = 60 };             /* 群の中心 x と左右のずれ */
-enum { HY_TITLE = 22,
-       HY_L2 = 68, HY_L1 = 106,                      /* 肩（外側が上） */
-       HY0 = 150, HY1 = 190, HY2 = 230,              /* 上 / 中 / 下 */
-       HRULE_Y = 278,                                /* 図と説明を分ける横線 */
-       HY_NOTE = 288, HNOTE_LEAD = 32 };             /* 図に出せないものの説明 */
-enum { HDIV_X = 318, HDIV_Y = 58, HDIV_H = 212 };    /* 左右の群を分ける縦線 */
+enum { HY_SHOULDER = 32,                             /* 肩（L2 L1 ┃ R2 R1）を 1 行に */
+       HY0 = 80, HY1 = 120, HY2 = 160,               /* 上 / 中 / 下 */
+       HRULE_Y = 206,                                /* 図と表を分ける横線 */
+       HY_GRID = 216, HGRID_LEAD = 32,               /* スティックの表（3 行） */
+       HY_NOTE = 324, HNOTE_LEAD = 32 };             /* 図にも表にも出せないもの */
+enum { HDIV_X = 318, HDIV_Y = 24, HDIV_H = 176 };    /* 左右の群を分ける縦線 */
 
 static uint16_t hbar[BASE][W];
+
+/* UTF-8 の 1 行を描いたときの幅。
+   ★★**測る**（字数から出さない）—— プロポーショナルなので `wxyz` は 4 字で 50px、
+   `あいうえ` は 4 字で 92px。Zenmai が実機で 34px 無駄にしたのがこの推定。 */
+static int u8_width(const char *s)
+{
+    uint16_t t[80];
+    const int n = u8_to_u16(s, -1, t, (int)(sizeof t / sizeof *t));
+    int w = 0;
+    for (int i = 0; i < n; i++)
+        w += glyph_w(t[i]);
+    return w;
+}
 
 /* 左群（十字キー側）の見出し。★席ごとに「行」の意味が違うが、**表から引く**のは同じ。 */
 static uint16_t help_left_char(int row)
@@ -1513,8 +1532,8 @@ static uint16_t help_cell_char(int row, int vowel, int rt)
     return gp_cell(seat == SEAT_EN, row, vowel);
 }
 
-/* 図に出しうる字ぜんぶ（＝器を決める一覧）。★`ind_alphabet` と同じ考え方だが、
-   こちらは**札の文言（L1 / SELECT …）も同じ帯に乗る**ので一緒に測る。
+/* 図と表に出しうる字ぜんぶ（＝器を決める一覧）。★`ind_alphabet` と同じ考え方だが、
+   こちらは**札や表の文言も同じ帯に乗る**ので一緒に測る。
    ★**0（空きマス）は入れない** —— draw24 に 0 を渡すと .notdef（黒い四角）が
      出て、ink が字より広くなる。 */
 static int help_alphabet(uint16_t *out, int max)
@@ -1524,6 +1543,11 @@ static int help_alphabet(uint16_t *out, int max)
     int n = 0;
     for (unsigned i = 0; i < sizeof lbl / sizeof *lbl && n < max; i++)
         n += u8_to_u16(lbl[i], -1, out + n, max - n);
+    for (int c = 0; c < UI_STK_COLS && n < max; c++) {
+        n += u8_to_u16(u->stick_head[c], -1, out + n, max - n);
+        for (int r = 0; r < UI_STK_ROWS && n < max; r++)
+            n += u8_to_u16(u->stick[seat][r][c], -1, out + n, max - n);
+    }
 
     if (seat == SEAT_HI) {
         DevaMachine m;
@@ -1561,7 +1585,7 @@ static int help_dy(void)
 {
     static int dy, cached = -1;
     if (cached != seat) {
-        uint16_t a[192];
+        uint16_t a[256];
         dy = ink_dy(a, help_alphabet(a, (int)(sizeof a / sizeof *a)));
         cached = seat;
     }
@@ -1576,6 +1600,8 @@ static void help_put(int cx, const uint16_t *s, int n, uint16_t color, int on)
     int w = 0;
     for (int i = 0; i < n; i++)
         w += glyph_w(s[i]);
+    if (!w)
+        return;
     int x = cx - w / 2;
     if (x + w > W - 10)                /* ★fill_rect は範囲を見ないので、ここで守る */
         x = W - 10 - w;
@@ -1614,17 +1640,20 @@ static void help_put1(int cx, uint16_t ch, uint16_t color, int on)
 }
 
 /* 「R1 あ」のような**動く札**。★字は面ボタンと同じ色にする —— 役が同じ（字を出す）
-   だから。前置き（`R1 `）の側は他の肩の札と同じ控えめのまま。 */
+   だから。前置き（`R1 `）の側は他の肩の札と同じ控えめのまま。
+   ★ch = 0 なら前置きだけ（固定の札もこれで描ける）。 */
 static void help_put_key(int cx, const char *pre, uint16_t ch, int on)
 {
-    uint16_t t[16];
-    const int pn = u8_to_u16(pre, -1, t, 12);
+    uint16_t t[24];
+    const int pn = u8_to_u16(pre, -1, t, 20);
     int w = 0;
     for (int i = 0; i < pn; i++)
         w += glyph_w(t[i]);
     if (ch)
         w += glyph_w(ch);
     int x = cx - w / 2;
+    if (x + w > W - 10)
+        x = W - 10 - w;
     if (x < 10)
         x = 10;
     if (on)
@@ -1638,6 +1667,21 @@ static void help_put_key(int cx, const char *pre, uint16_t ch, int on)
         draw24(hbar, BASE, x, dy, ch, on ? OPT_BG : INK);
 }
 
+/* 肩の 2 札を群の中心の左右に置く。
+   ★★**縦に積まず横に並べる**（実機の指摘・2026-09-04）—— 空いた 1 行ぶんが
+     そのままスティックの表に回る。★どちらの札も**動く字を持てる**形にしてある
+     （R1 はその行のあ段、ヒンディー語の L1 はその組の鼻音）。 */
+static void help_shoulder(int cx, const char *a, uint16_t ach, int on_a,
+                                  const char *b, uint16_t bch, int on_b)
+{
+    enum { GAP = 28 };
+    const int wa = u8_width(a) + (ach ? glyph_w(ach) : 0);
+    const int wb = u8_width(b) + (bch ? glyph_w(bch) : 0);
+    const int x = cx - (wa + GAP + wb) / 2;
+    help_put_key(x + wa / 2, a, ach, on_a);
+    help_put_key(x + wa + GAP + wb / 2, b, bch, on_b);
+}
+
 /* 帯を**縦の仕切りごと**送る。★仕切りを毎回引き直すとボタンを押すたびにちらつく
    （Zenmai が縁で踏んだ）。帯が仕切りを持てば消えないので、引き直す必要がなくなる。 */
 static void help_band(int y, int div)
@@ -1646,6 +1690,50 @@ static void help_band(int y, int div)
         for (int r = 0; r < BASE; r++)
             hbar[r][HDIV_X] = hbar[r][HDIV_X + 1] = DIM;
     gp0_upload(0, y, W, BASE, hbar[0]);
+}
+
+/* スティックの表の列。★★**中身を測って割り付ける**（席ごとに幅が違う ――
+   「ㅘ ㅝ」と「長母音」では倍近い）。固定値を置くと、字を替えたときに黙って重なる。 */
+static void help_grid_x(int *cx)
+{
+    const UiText *u = &UI[ui_lang];
+    int w[UI_STK_COLS], total = 0;
+    for (int c = 0; c < UI_STK_COLS; c++) {
+        w[c] = u8_width(u->stick_head[c]);
+        for (int r = 0; r < UI_STK_ROWS; r++) {
+            const int t = u8_width(u->stick[seat][r][c]);
+            if (t > w[c])
+                w[c] = t;
+        }
+        total += w[c];
+    }
+    int gap = (TEXT_W - total) / (UI_STK_COLS - 1);
+    if (gap < 8)
+        gap = 8;                       /* ★詰まりきったら諦める（端が切れるだけ） */
+    int x = MARGIN;
+    for (int c = 0; c < UI_STK_COLS; c++) {
+        cx[c] = x + w[c] / 2;
+        x += w[c] + gap;
+    }
+}
+
+/* 表は押しても変わらないので、頁を開くときに 1 回だけ描く。 */
+static void help_grid(void)
+{
+    const UiText *u = &UI[ui_lang];
+    int cx[UI_STK_COLS];
+    help_grid_x(cx);
+    fill_rows(hbar, 0, BASE, OPT_BG);
+    for (int c = 0; c < UI_STK_COLS; c++)
+        help_put_u8(cx[c], u->stick_head[c], DIM, 0);
+    help_band(HY_GRID, 0);
+    for (int r = 0; r < UI_STK_ROWS; r++) {
+        fill_rows(hbar, 0, BASE, OPT_BG);
+        /* ★1 列目（「右」「左」）は見出しなので控えめ、中身は本文と同じ色。 */
+        for (int c = 0; c < UI_STK_COLS; c++)
+            help_put_u8(cx[c], u->stick[seat][r][c], c ? INK : DIM, 0);
+        help_band(HY_GRID + (r + 1) * HGRID_LEAD, 0);
+    }
 }
 
 /* かなの骨格を共有する 3 席（日本語 / 英語 / 韓国語）。 */
@@ -1657,15 +1745,12 @@ static void help_draw_kana(int p)
     const int vowel = pad_vowel(p);
     const int rt = (p & BTN_R2) != 0;
 
-    fill_rows(hbar, 0, BASE, OPT_BG);                  /* 肩（外側）: L2 / R2 */
-    help_put_u8(HLX, u->l2[seat], DIM, (p & BTN_L2) != 0);
-    help_put_u8(HRX, u->r2[seat], DIM, (p & BTN_R2) != 0);
-    help_band(HY_L2, 1);
-
-    fill_rows(hbar, 0, BASE, OPT_BG);                  /* 肩（内側）: L1 / R1 */
-    help_put_u8(HLX, u->l1[seat], DIM, (p & BTN_L1) != 0);
-    help_put_key(HRX, u->r1, help_cell_char(row, 0, rt), (p & BTN_R1) != 0);
-    help_band(HY_L1, 1);
+    fill_rows(hbar, 0, BASE, OPT_BG);                  /* 肩: L2 L1 ┃ R2 R1 */
+    help_shoulder(HLX, u->l2[seat], 0, (p & BTN_L2) != 0,
+                       u->l1[seat], 0, (p & BTN_L1) != 0);
+    help_shoulder(HRX, u->r2[seat], 0, (p & BTN_R2) != 0,
+                       u->r1, help_cell_char(row, 0, rt), (p & BTN_R1) != 0);
+    help_band(HY_SHOULDER, 1);
 
     fill_rows(hbar, 0, BASE, OPT_BG);                  /* 上: ↑ の行 / △ の字 */
     help_put1(HLX, help_left_char(base + 2), INK, dir == 2);
@@ -1690,7 +1775,7 @@ static void help_draw_kana(int p)
 /* ヒンディー語。★左群は**いま latch している組の中の 4 つ**（十字 ↑→↓←）で、
    ★**中央は空** —— 十字を押さないと子音は出ない（かなの席と違うところ）。
    その代わり L1 の札が動く = その組の鼻音（ङ ञ ण न म）。 */
-static void help_draw_deva(int p, const DevaMachine *hm)   /* hm = いまの latch（本文と同じ dvm） */
+static void help_draw_deva(int p, const DevaMachine *hm)
 {
     const UiText *u = &UI[ui_lang];
     const int lt = (p & BTN_L2) != 0;
@@ -1698,14 +1783,11 @@ static void help_draw_deva(int p, const DevaMachine *hm)   /* hm = いまの lat
     const int vowel = pad_vowel(p);
 
     fill_rows(hbar, 0, BASE, OPT_BG);
-    help_put_u8(HLX, u->l2[seat], DIM, lt);
-    help_put_u8(HRX, u->r2[seat], DIM, (p & BTN_R2) != 0);
-    help_band(HY_L2, 1);
-
-    fill_rows(hbar, 0, BASE, OPT_BG);
-    help_put_key(HLX, u->l1[seat], deva_stop_char(hm, lt, 4), (p & BTN_L1) != 0);
-    help_put_key(HRX, u->r1, deva_vowel_char(0, lt), (p & BTN_R1) != 0);
-    help_band(HY_L1, 1);
+    help_shoulder(HLX, u->l2[seat], 0, lt,
+                       u->l1[seat], deva_stop_char(hm, lt, 4), (p & BTN_L1) != 0);
+    help_shoulder(HRX, u->r2[seat], 0, (p & BTN_R2) != 0,
+                       u->r1, deva_vowel_char(0, lt), (p & BTN_R1) != 0);
+    help_band(HY_SHOULDER, 1);
 
     fill_rows(hbar, 0, BASE, OPT_BG);
     help_put1(HLX, deva_stop_char(hm, lt, 0), INK, dpad == 0);
@@ -1725,10 +1807,9 @@ static void help_draw_deva(int p, const DevaMachine *hm)   /* hm = いまの lat
     help_band(HY2, 1);
 }
 
-/* 図（ボタンの札）と、その下の試し打ち欄をまとめて描く。
-   ★★**欄は本文と同じ `draw_input`** —— 地色も右下のインジケータも本物のまま。
-     「本物と同じ絵を、地色と y だけ変えて出す」（Zenmai の help_strip）と同じ判断で、
-     こちらは y も同じ（画面の一番下）なので**そのまま呼べる**。 */
+/* 図（ボタンの札）と、その下の試し打ち欄。
+   ★★**欄は本文と同じ `draw_input`** —— 右下のインジケータも本物のまま。
+     ★地色も画面に合わせる（`screen_bg`）—— 欄だけ黒いと浮く（実機の指摘）。 */
 static void help_draw(int p, int row)
 {
     if (seat == SEAT_HI)
@@ -1799,24 +1880,18 @@ static void help_open(void)
     ko_init(&ko);
     deva_init(&dv);
 
-    paint_screen(OPT_BG);
+    paint_screen(OPT_BG);              /* ★地色を替える（欄もこれに従う） */
 
-    char t8[192];
-    snprintf(t8, sizeof t8, "%s%s%s", u->help_title, u->help_dash, u->seat[seat]);
-    fill_rows(hbar, 0, BASE, OPT_BG);
-    help_put_u8(W / 2, t8, ACCENT, 0);
-    help_band(HY_TITLE, 0);
-
-    /* ★図に出せないものだけを下に置く（右スティックの役・変換・送り方）。 */
+    /* ★図にも表にも出せないものだけを下に置く。 */
     for (int i = 0; i < UI_NOTE_N; i++) {
         fill_rows(hbar, 0, BASE, OPT_BG);
         help_put_u8(W / 2, u->note[seat][i], DIM, 0);
         help_band(HY_NOTE + i * HNOTE_LEAD, 0);
     }
+    help_grid();
 
     /* ★仕切りはここで 1 回だけ。以降は帯が運ぶ（help_band の注記）。
-       ★横線は**図と説明を分ける** —— 上は「押すと光るもの」、下は「読むもの」で、
-         同じ地色の上に混ざっていると、どこまでが図なのか分からない（実機の指摘）。 */
+       ★横線は**図と表を分ける** —— 上は「押すと光るもの」、下は「読むもの」。 */
     uint16_t line[HDIV_H * 2];
     for (int i = 0; i < HDIV_H * 2; i++)
         line[i] = DIM;
@@ -1870,6 +1945,11 @@ static void help_open(void)
     gm = sv.gm;
     ko = sv.ko;
     dv = sv.dv;
+    /* ★★**画面を本文の地色で塗り直してから返す。** 呼んだ側が描き直すのは
+       本文窓と入力欄だけなので、**上端と下端に藍の帯が残る**（実機の指摘・2026-09-04）。
+       ★「誰も塗らない帯」は境界の持ち主が決まっていないときに出る —— 全画面を
+         使ったのはこちらなので、返すのもこちら。 */
+    paint_screen(BG);
 }
 
 /* ★マッピングは GIME 準拠（docs/gamepad-mapping.md）。
