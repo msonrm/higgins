@@ -20,7 +20,7 @@ $(BUILD)/eliza: $(ELIZA_SRC)
 #   そこで 2 つ焼いて、両方の結果が揃ってはじめて緑とする:
 #     eliza-count  … 本番と同じロジック + 件数表示   → 「1 件以上あって 0 失敗」
 #     eliza-canary … それにわざと落ちるテストを 1 個 → 「1 失敗」（検査が生きている証拠）
-test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-ja-coverage test-ko-doctor test-ko-coverage test-ko-words test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-ja-words test-ja-ranks test-ko-ranks test-web test-api test-native
+test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-ja-coverage test-ko-doctor test-ko-coverage test-ko-words test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-ja-words test-ja-ranks test-ko-ranks test-web test-api test-native test-ui
 	@printf '\n' | $(BUILD)/eliza-count | grep -qE '[1-9][0-9]* assertions' \
 	  || { echo 'FAIL: テストが 1 件も走っていない'; exit 1; }
 	@printf '\n' | $(BUILD)/eliza-count | grep -q '0 failures' \
@@ -259,6 +259,21 @@ test-native:
 	      || { echo 'FAIL: 入力（合成）が期待と違う'; \
 	           diff -u experiments/input.out $(BUILD)/input.out | head -20; exit 1; }; \
 	    echo 'OK: native 版と CLI 版の応答が一致（日本語・韓国語・ヒンディー語）/ 合成も一致（韓国語・デーヴァナーガリー）'; \
+	fi
+
+# UI の文言が画面に収まるか（★全 UI 言語 × 全席の総当たり）。
+# ★★**はみ出しは画面では端が切れるだけ**なので、絵を撮っても気づけない ——
+#   本体が stderr に 1 行出すのを uicheck.sh が拾う。中身は native/uicheck.sh の頭書き。
+# ★同梱フォントが要る（幅はフォント次第）。無ければ**走らなかったと明示して**飛ばす。
+test-ui:
+	@if ! pkg-config --exists sdl2 freetype2 2>/dev/null; then \
+	    echo 'SKIP: sdl2 / freetype2 が無い（UI の幅は見ていない）'; \
+	elif [ ! -f native/higgins.otf ]; then \
+	    echo 'SKIP: native/higgins.otf が無い（sh native/make_font.sh）―― UI の幅は見ていない'; \
+	else \
+	    sh native/build.sh > /dev/null \
+	      || { echo 'FAIL: native のビルドが通らない'; exit 1; }; \
+	    sh native/uicheck.sh || exit 1; \
 	fi
 
 clean:

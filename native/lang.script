@@ -1,0 +1,4 @@
+# 起動画面（UI 言語の選択）。★ここだけ HIGGINS_LANG を渡さずに走らせる
+# （shots.sh が台本名で判別する）。下を 1 回押して English を選んだところ。
+#   ZENMAI_STOP=200
+100-130:DOWN         # English へ

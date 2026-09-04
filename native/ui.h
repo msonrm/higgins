@@ -19,7 +19,13 @@
 #ifndef HG_UI_H
 #define HG_UI_H
 
-enum { UI_JA = 0, UI_LANG_N = 1 };
+/* ★★**UI 言語は 3 つ（日 / 英 / 韓）。ヒンディー語席の説明は英語で出す。**
+   （2026-09-04・msonrm さんの判断）—— ★理由は**描画**: 図と表は `draw24` を
+   1 字ずつ呼ぶので、**デーヴァナーガリーの文は合字にならない**（母音記号が前に
+   回り、子音が縦に積む）。★表に出る `क〜` などは**単字なので合字が起きない**ので、
+   「席の説明は出すが、UI 言語としては持たない」で問題が消える。
+   ★UI 言語をヒンディー語まで増やすなら、先に図と表を `shape_run` の経路へ移すこと。 */
+enum { UI_JA = 0, UI_EN = 1, UI_KO = 2, UI_LANG_N = 3 };
 
 /* ★並びは main.c の SEAT_*（日本語 / 英語 / 韓国語 / ヒンディー語）と同じ。 */
 enum { UI_SEAT_N = 4 };
@@ -33,6 +39,14 @@ enum { UI_NOTE_N = 2 };
    ★1 列目は見出し（「スティック」「右」「左」）で、**「スティック」は 2 行に
    共通する語をくくり出したもの** —— 各行に「右スティック」と書かずに済む。 */
 enum { UI_STK_COLS = 6, UI_STK_ROWS = 3 };
+
+/* 起動画面（言語の選択）。★★**題・説明・作品名は言語に依らない**（Zenmai と同じ）——
+   固有名詞に近く、どの言語で読む人にも同じものを指すため。
+   ★作品名に 4 席の名を並べたくなるが、**हिन्दी は合字を持つ**ので出さない
+   （上の UI_LANG_N の注記）。 */
+static const char *const UI_BOOT_TITLE = "Higgins";
+static const char *const UI_BOOT_SUB   = "ELIZA and a game controller";
+static const char *const UI_BOOT_WORK  = "DOCTOR (1966)";
 
 /* メニューの項目。★menu[] の並びと同じ（menu_open がこの値を返す）。
    ★★**「つづける」は置かない**（実機の指摘・2026-09-04）—— Start で開いて
@@ -80,6 +94,9 @@ typedef struct {
     const char *stick_head[UI_STK_COLS];
     const char *stick[UI_SEAT_N][UI_STK_ROWS][UI_STK_COLS];
     const char *note[UI_SEAT_N][UI_NOTE_N];
+    /* 起動画面。★boot_name は**その言語で書く**（選ぶ人が読むのだから）。 */
+    const char *boot_name;
+    const char *boot_hint;
 } UiText;
 
 static const UiText UI[UI_LANG_N] = {
@@ -126,6 +143,9 @@ static const UiText UI[UI_LANG_N] = {
             },
         },
 
+        .boot_name = "日本語",
+        .boot_hint = "話しているとき Start でメニュー",
+
         .note = {
             {   /* 日本語 */
                 "左手で行、右手で段。同時に押すと 1 字入る",
@@ -144,6 +164,124 @@ static const UiText UI[UI_LANG_N] = {
                    表の `य〜` だけでは श ष स ह に届かない（実機の指摘・2026-09-04）。 */
                 "左スティックで組をえらぶ（倒すたび切替・中立は प）",
                 "य〜 の層で L2 を足すと श ष स ह になる",
+            },
+        },
+    },
+    [UI_EN] = {
+        .menu = { "How to type", "Licenses", "Quit" },
+        .lic_title = "Licenses",
+        .lic_note = {
+            "Full texts are in the licenses/ folder",
+            "The DOCTOR translations are part of Higgins",
+        },
+
+        .l1 = { "L1 はまやらわ", "L1 6-0", "L1 \u3141\u3142\u3145\u3148\u314E", "L1 " },
+        .l2 = { "L2 small", "L2 Shift", "L2 \u3147 final", "L2 fricatives" },
+        .r2 = { "R2 \u3093 \u3092", "R2 0", "R2 \u3151\u3155\u315B\u3160\u3163", "R2 join" },
+        .r1 = "R1 ",
+
+        .stick_head = { "Stick", "\u2191", "\u2193", "\u2190", "\u2192", "Press" },
+        .stick = {
+            {   /* Japanese seat */
+                { "Right", "voicing", "\u3001\u3002", "delete", "long", "cancel" },
+                { "Left", "prev", "convert", "phrase", "phrase", "send" },
+                { "R2+L", "", "", "length", "length", "" },
+            },
+            {   /* English seat */
+                { "Right", "'", "space .,", "delete", "/", "" },
+                { "Left", "\u2191", "\u2193", "\u2190", "\u2192", "send" },
+                { "R2+L", "", "", "", "", "" },
+            },
+            {   /* Korean seat */
+                { "Right", "asp/tense", "space .?,", "delete", "\u3158 \u315D", "" },
+                { "Left", "\u2191", "\u2193", "\u2190", "\u2192", "send" },
+                { "R2+L", "", "", "", "", "" },
+            },
+            {   /* Hindi seat */
+                { "Right", "dot", "space \u0964,", "delete", "long", "" },
+                { "Left", "\u0915~", "\u091F~", "\u0924~", "\u091A~", "\u092F~" },
+                { "R2+L", "\u2191", "\u2193", "\u2190", "\u2192", "send" },
+            },
+        },
+
+        .boot_name = "English",
+        .boot_hint = "Press START for the menu",
+
+        .note = {
+            {   /* Japanese seat */
+                "Left hand picks the row, right hand the vowel",
+                "L2 + R2 gives the small tsu",
+            },
+            {   /* English seat */
+                "Left hand picks the row, right hand the column",
+                "Tap L2 to cycle the shift (\u21E7 \u2192 \u25B3 \u2192 off)",
+            },
+            {   /* Korean seat */
+                "Left hand consonant, right hand vowel. R2 comes first",
+                "D-pad alone adds a final consonant (L2 = \u3147)",
+            },
+            {   /* Hindi seat */
+                "Left stick picks the varga (tap to switch, neutral = \u092A)",
+                "In the \u092F~ layer, add L2 for \u0936 \u0937 \u0938 \u0939",
+            },
+        },
+    },
+    [UI_KO] = {
+        .menu = { "문자 입력 방법", "라이선스", "종료" },
+        .lic_title = "라이선스",
+        .lic_note = {
+            "전문은 licenses/ 폴더에 있습니다",
+            "DOCTOR 번역도 Higgins에 포함됩니다",
+        },
+
+        .l1 = { "L1 はまやらわ", "L1 6-0", "L1 ㅁㅂㅅㅈㅎ", "L1 " },
+        .l2 = { "L2 작은 가나", "L2 시프트", "L2 ㅇ받침", "L2 마찰음" },
+        .r2 = { "R2 ん を", "R2 0", "R2 ㅑㅕㅛㅠㅣ", "R2 잇기" },
+        .r1 = "R1 ",
+
+        .stick_head = { "스틱", "↑", "↓", "←", "→", "누름" },
+        .stick = {
+            {   /* 일본어 자리 */
+                { "오른쪽", "탁점", "、。", "지우기", "장음", "취소" },
+                { "왼쪽", "이전", "변환", "문절", "문절", "보내기" },
+                { "R2+왼", "", "", "길이", "길이", "" },
+            },
+            {   /* 영어 자리 */
+                { "오른쪽", "'", "공백 .,", "지우기", "/", "" },
+                { "왼쪽", "↑", "↓", "←", "→", "보내기" },
+                { "R2+왼", "", "", "", "", "" },
+            },
+            {   /* 한국어 자리 */
+                { "오른쪽", "격/경음", "공백 .?,", "지우기", "ㅘ ㅝ", "" },
+                { "왼쪽", "↑", "↓", "←", "→", "보내기" },
+                { "R2+왼", "", "", "", "", "" },
+            },
+            {   /* 힌디어 자리 */
+                { "오른쪽", "점", "공백 ।,", "지우기", "장모음", "" },
+                { "왼쪽", "क〜", "ट〜", "त〜", "च〜", "य〜" },
+                { "R2+왼", "↑", "↓", "←", "→", "보내기" },
+            },
+        },
+
+        .boot_name = "한국어",
+        .boot_hint = "대화 중 START 로 메뉴",
+
+        .note = {
+            {   /* 일본어 자리 */
+                "왼손은 행, 오른손은 단. 동시에 누르면 한 글자",
+                "L2 + R2 로 작은 っ",
+            },
+            {   /* 영어 자리 */
+                "왼손은 행, 오른손은 열. 한 행에 3~4 글자",
+                "L2 를 한 번씩 누르면 시프트가 순환 (⇧ → △ → 없음)",
+            },
+            {   /* 한국어 자리 */
+                "왼손은 자음, 오른손은 모음. R2 를 먼저 누르세요",
+                "십자키만 누르면 받침이 됩니다 (L2 = ㅇ받침)",
+            },
+            {   /* 힌디어 자리 */
+                "왼쪽 스틱으로 자음군 선택 (누를 때마다 전환, 중립은 प)",
+                "य〜 층에서 L2 를 더하면 श ष स ह",
             },
         },
     },
