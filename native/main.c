@@ -1492,12 +1492,17 @@ static int apply_frame(int p, const uint8_t axes[4], int fields, int *rowp)
  *   10 個**で、文に流し込むと「どれがどれか」を読み手が組み直すことになる。
  */
 enum { HLX = 168, HRX = 472, HDX = 60 };             /* 群の中心 x と左右のずれ */
-enum { HY_SHOULDER = 32,                             /* 肩（L2 L1 ┃ R2 R1）を 1 行に */
-       HY0 = 80, HY1 = 120, HY2 = 160,               /* 上 / 中 / 下 */
-       HRULE_Y = 206,                                /* 図と表を分ける横線 */
-       HY_GRID = 216, HGRID_LEAD = 32,               /* スティックの表（3 行） */
-       HY_NOTE = 324, HNOTE_LEAD = 32 };             /* 図にも表にも出せないもの */
-enum { HDIV_X = 318, HDIV_Y = 24, HDIV_H = 176 };    /* 左右の群を分ける縦線 */
+/* ★★**横線で 3 つに分ける**（実機の指摘・2026-09-04）—— 肩 / 十字と面ボタン /
+   スティックの表 は**別々の手が触るもの**なので、地続きに並べると読み分けられない。 */
+enum { HY_SHOULDER = 28,                             /* 肩（L1 L2 ┃ R2 R1）を 1 行に */
+       HRULE1_Y = 68,                                /* 肩と、十字・面ボタンのあいだ */
+       HY0 = 78, HY1 = 116, HY2 = 154,               /* 上 / 中 / 下 */
+       HRULE2_Y = 194,                               /* 図と表のあいだ */
+       HY_GRID = 202, HGRID_LEAD = 32,               /* スティックの表（最大 3 行） */
+       HNOTE_LEAD = 32 };                            /* 図にも表にも出せないもの */
+/* 左右の群を分ける縦線。★**肩から下まで通す** —— 肩も「左手 / 右手」で分かれて
+   いるので、途中で切ると**肩と図で別の分け方をしている**ように見える。 */
+enum { HDIV_X = 318, HDIV_Y = 26, HDIV_H = 158 };
 
 static uint16_t hbar[BASE][W];
 
@@ -1717,8 +1722,11 @@ static void help_grid_x(int *cx)
     }
 }
 
-/* 表は押しても変わらないので、頁を開くときに 1 回だけ描く。 */
-static void help_grid(void)
+/* 表は押しても変わらないので、頁を開くときに 1 回だけ描く。戻り値 = 描いた行数
+   （見出しを含む）。★★**使わない行は出さない** —— 「R2 ＋ 左」は日本語と
+   ヒンディー語にしか無いので、他の席で空の行が残ると表が読みにくくなる。
+   ★下に置くもの（横線と説明）の位置は**この戻り値から決める**ので、席ごとに詰まる。 */
+static int help_grid(void)
 {
     const UiText *u = &UI[ui_lang];
     int cx[UI_STK_COLS];
@@ -1727,13 +1735,22 @@ static void help_grid(void)
     for (int c = 0; c < UI_STK_COLS; c++)
         help_put_u8(cx[c], u->stick_head[c], DIM, 0);
     help_band(HY_GRID, 0);
+    int n = 1;
     for (int r = 0; r < UI_STK_ROWS; r++) {
+        int any = 0;
+        for (int c = 1; c < UI_STK_COLS; c++)      /* ★見出し（列 0）は数えない */
+            if (u->stick[seat][r][c][0])
+                any = 1;
+        if (!any)
+            continue;
         fill_rows(hbar, 0, BASE, OPT_BG);
-        /* ★1 列目（「右」「左」）は見出しなので控えめ、中身は本文と同じ色。 */
+        /* ★1 列目（「右」「左」「R2+左」）は見出しなので控えめ、中身は本文と同じ色。 */
         for (int c = 0; c < UI_STK_COLS; c++)
             help_put_u8(cx[c], u->stick[seat][r][c], c ? INK : DIM, 0);
-        help_band(HY_GRID + (r + 1) * HGRID_LEAD, 0);
+        help_band(HY_GRID + n * HGRID_LEAD, 0);
+        n++;
     }
+    return n;
 }
 
 /* かなの骨格を共有する 3 席（日本語 / 英語 / 韓国語）。 */
@@ -1745,9 +1762,11 @@ static void help_draw_kana(int p)
     const int vowel = pad_vowel(p);
     const int rt = (p & BTN_R2) != 0;
 
-    fill_rows(hbar, 0, BASE, OPT_BG);                  /* 肩: L2 L1 ┃ R2 R1 */
-    help_shoulder(HLX, u->l2[seat], 0, (p & BTN_L2) != 0,
-                       u->l1[seat], 0, (p & BTN_L1) != 0);
+    /* 肩: L1 L2 ┃ R2 R1。★★**外側が 1、内側が 2**（実機の指摘・2026-09-04）——
+       実物の肩ボタンの重なりと同じ向きなので、そのほうが手に対応する。 */
+    fill_rows(hbar, 0, BASE, OPT_BG);
+    help_shoulder(HLX, u->l1[seat], 0, (p & BTN_L1) != 0,
+                       u->l2[seat], 0, (p & BTN_L2) != 0);
     help_shoulder(HRX, u->r2[seat], 0, (p & BTN_R2) != 0,
                        u->r1, help_cell_char(row, 0, rt), (p & BTN_R1) != 0);
     help_band(HY_SHOULDER, 1);
@@ -1782,9 +1801,9 @@ static void help_draw_deva(int p, const DevaMachine *hm)
     const int dpad = pad_deva_dpad(p);
     const int vowel = pad_vowel(p);
 
-    fill_rows(hbar, 0, BASE, OPT_BG);
-    help_shoulder(HLX, u->l2[seat], 0, lt,
-                       u->l1[seat], deva_stop_char(hm, lt, 4), (p & BTN_L1) != 0);
+    fill_rows(hbar, 0, BASE, OPT_BG);                  /* ★外側が 1、内側が 2 */
+    help_shoulder(HLX, u->l1[seat], deva_stop_char(hm, lt, 4), (p & BTN_L1) != 0,
+                       u->l2[seat], 0, lt);
     help_shoulder(HRX, u->r2[seat], 0, (p & BTN_R2) != 0,
                        u->r1, deva_vowel_char(0, lt), (p & BTN_R1) != 0);
     help_band(HY_SHOULDER, 1);
@@ -1882,16 +1901,18 @@ static void help_open(void)
 
     paint_screen(OPT_BG);              /* ★地色を替える（欄もこれに従う） */
 
-    /* ★図にも表にも出せないものだけを下に置く。 */
+    const int grid_n = help_grid();
+    const int rule3_y = HY_GRID + grid_n * HGRID_LEAD + 6;   /* 表の下の横線 */
+
+    /* ★図にも表にも出せないものだけを、その下に置く。 */
     for (int i = 0; i < UI_NOTE_N; i++) {
         fill_rows(hbar, 0, BASE, OPT_BG);
         help_put_u8(W / 2, u->note[seat][i], DIM, 0);
-        help_band(HY_NOTE + i * HNOTE_LEAD, 0);
+        help_band(rule3_y + 8 + i * HNOTE_LEAD, 0);
     }
-    help_grid();
 
     /* ★仕切りはここで 1 回だけ。以降は帯が運ぶ（help_band の注記）。
-       ★横線は**図と表を分ける** —— 上は「押すと光るもの」、下は「読むもの」。 */
+       ★横線は**触る手ごとに分ける** —— 肩 / 十字と面ボタン / スティックの表。 */
     uint16_t line[HDIV_H * 2];
     for (int i = 0; i < HDIV_H * 2; i++)
         line[i] = DIM;
@@ -1899,7 +1920,9 @@ static void help_open(void)
     uint16_t rule[TEXT_W * 2];
     for (int i = 0; i < TEXT_W * 2; i++)
         rule[i] = DIM;
-    gp0_upload(MARGIN, HRULE_Y, TEXT_W, 2, rule);
+    gp0_upload(MARGIN, HRULE1_Y, TEXT_W, 2, rule);
+    gp0_upload(MARGIN, HRULE2_Y, TEXT_W, 2, rule);
+    gp0_upload(MARGIN, rule3_y, TEXT_W, 2, rule);
 
     /* ★**いま押されているものを「もう見た」ことにする** —— しないと、メニューを
        決めた指が肩やスティックに掛かっていただけで、入った瞬間に字が 1 つ出る。 */
