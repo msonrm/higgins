@@ -22,6 +22,9 @@ rm -rf "$OUT"
 mkdir -p "$OUT/conf"
 ng=0
 n=0
+# ★★**席と UI 言語を別々に指す。** 起動画面では UI 言語が席から決まる（日本語席なら
+#   日本語 UI）が、検査は**全 UI 言語 × 全席**を叩きたい —— そのために
+#   `HIGGINS_UI` が `HIGGINS_SEAT` を上書きできるようにしてある。
 for lang in ja en ko; do
     # ★席ごとに 1 本ずつ（台本が席を選ぶ）＋ ライセンスの頁。
     for f in help.script help_en.script help_ko.script help_hi.script license.script; do
@@ -30,7 +33,7 @@ for lang in ja en ko; do
         mkdir -p "$OUT/conf"
         msg=$(SDL_VIDEODRIVER=offscreen ZENMAI_SCRIPT="$f" ZENMAI_STOP="$stop" \
               ZENMAI_FONT="$PWD/higgins.otf" ZENMAI_FONT_DEVA="$PWD/higgins-deva.ttf" \
-              HIGGINS_PROFILE="$OUT/conf" HIGGINS_LANG="$lang" \
+              HIGGINS_PROFILE="$OUT/conf" HIGGINS_SEAT=ja HIGGINS_UI="$lang" \
               "$BIN" 2>&1 >/dev/null | grep -E '^(help|license):' || true)
         n=$((n + 1))
         if [ -n "$msg" ]; then

@@ -1506,6 +1506,46 @@ enum { HDIV_X = 318, HDIV_Y = 26, HDIV_H = 158 };
 
 static uint16_t hbar[BASE][W];
 
+/* 帯に置く字の下げ幅。★★**頁ごとに違う**（出る字が違えば器の中の位置も違う）ので、
+   **頁を開くときに 1 回決めて**ここに置く —— 描くたびに測ると、同じ帯の中で
+   字が上下に跳ねる（`ind_dy` が席ごとに 1 回だけ測るのと同じ判断）。 */
+static int hbar_dy;
+
+/* ---- 帯に 1 行置く（整形を通す）----
+ *
+ * ★★**整形を通す。** デーヴァナーガリーは母音記号が**論理の順と違う位置へ回り**
+ *   （`ि` は子音の前に出る）、子音が**縦に積んで合字になる**（`क` + `्` + `ष` → `क्ष`）
+ *   ので、`draw24` をどう並べても正しい絵にならない。
+ * ★★**主面（日本語・韓国語・英語）は `shape_run` が整形を通さず 1 対 1 で返す**
+ *   （glyph_ft.c の頭書き ―― 通すと Noto Sans の合字とカーニングが効いて絵が変わる）。
+ *   だから**この経路へ移しても、それらの絵は 1 画素も変わらない**。
+ */
+enum { HSHAPE_MAX = 160 };
+
+static int shaped_width(const uint16_t *s, int n)
+{
+    Shaped sh[HSHAPE_MAX];
+    const int m = shape_run(s, n, sh, HSHAPE_MAX);
+    int w = 0;
+    for (int i = 0; i < m; i++)
+        w += sh[i].adv;
+    return w;
+}
+
+/* 左端 x から置く。戻り値 = 置いた幅。 */
+static int hbar_draw(int x, const uint16_t *s, int n, uint16_t color)
+{
+    Shaped sh[HSHAPE_MAX];
+    const int m = shape_run(s, n, sh, HSHAPE_MAX);
+    const int x0 = x;
+    for (int i = 0; i < m; i++) {
+        draw24_gid(hbar, BASE, x + sh[i].dx, hbar_dy + sh[i].dy,
+                   sh[i].gid, sh[i].face, color);
+        x += sh[i].adv;
+    }
+    return x - x0;
+}
+
 /* UTF-8 の 1 行を描いたときの幅。
    ★★**測る**（字数から出さない）—— プロポーショナルなので `wxyz` は 4 字で 50px、
    `あいうえ` は 4 字で 92px。Zenmai が実機で 34px 無駄にしたのがこの推定。 */
@@ -1513,10 +1553,7 @@ static int u8_width(const char *s)
 {
     uint16_t t[80];
     const int n = u8_to_u16(s, -1, t, (int)(sizeof t / sizeof *t));
-    int w = 0;
-    for (int i = 0; i < n; i++)
-        w += glyph_w(t[i]);
-    return w;
+    return shaped_width(t, n);
 }
 
 /* 左群（十字キー側）の見出し。★席ごとに「行」の意味が違うが、**表から引く**のは同じ。 */
@@ -1585,11 +1622,6 @@ static int help_alphabet(uint16_t *out, int max)
     return n;
 }
 
-/* 帯に置く字の下げ幅。★★**頁ごとに違う**（出る字が違えば器の中の位置も違う）ので、
-   **頁を開くときに 1 回決めて**ここに置く —— 描くたびに測ると、同じ帯の中で
-   字が上下に跳ねる（`ind_dy` が席ごとに 1 回だけ測るのと同じ判断）。 */
-static int hbar_dy;
-
 /* 図と表の下げ幅。★席が変わるまで動かない（`ind_dy` と同じ形）。 */
 static int help_dy(void)
 {
@@ -1607,9 +1639,7 @@ static int help_dy(void)
      差が小さくて分からない（Zenmai が実機で言われた）。メニューの選択行と同じ反転。 */
 static void help_put(int cx, const uint16_t *s, int n, uint16_t color, int on)
 {
-    int w = 0;
-    for (int i = 0; i < n; i++)
-        w += glyph_w(s[i]);
+    const int w = shaped_width(s, n);
     if (!w)
         return;
     int x = cx - w / 2;
@@ -1621,10 +1651,7 @@ static void help_put(int cx, const uint16_t *s, int n, uint16_t color, int on)
         fill_rect(hbar, x - 8, 0, w + 16, BASE, ACCENT);
         color = OPT_BG;                /* 面の上は地色で抜く */
     }
-    for (int i = 0; i < n; i++) {
-        draw24(hbar, BASE, x, hbar_dy, s[i], color);
-        x += glyph_w(s[i]);
-    }
+    hbar_draw(x, s, n, color);
 }
 
 /* ★★**溢れたら黙らずに言う。** 画面では端が切れるだけなので、開発機で撮っている
@@ -1634,9 +1661,7 @@ static void help_put_u8(int cx, const char *s, uint16_t color, int on)
 {
     uint16_t t[80];
     const int n = u8_to_u16(s, -1, t, (int)(sizeof t / sizeof *t));
-    int w = 0;
-    for (int i = 0; i < n; i++)
-        w += glyph_w(t[i]);
+    const int w = shaped_width(t, n);
     if (w > W - 20)
         fprintf(stderr, "help: 説明がはみ出している（%d px > %d）: %s\n", w, W - 20, s);
     help_put(cx, t, n, color, on);
@@ -1655,11 +1680,9 @@ static void help_put_key(int cx, const char *pre, uint16_t ch, int on)
 {
     uint16_t t[24];
     const int pn = u8_to_u16(pre, -1, t, 20);
-    int w = 0;
-    for (int i = 0; i < pn; i++)
-        w += glyph_w(t[i]);
+    int w = shaped_width(t, pn);
     if (ch)
-        w += glyph_w(ch);
+        w += shaped_width(&ch, 1);
     int x = cx - w / 2;
     if (x + w > W - 10)
         x = W - 10 - w;
@@ -1667,12 +1690,9 @@ static void help_put_key(int cx, const char *pre, uint16_t ch, int on)
         x = 10;
     if (on)
         fill_rect(hbar, x - 8, 0, w + 16, BASE, ACCENT);
-    for (int i = 0; i < pn; i++) {
-        draw24(hbar, BASE, x, hbar_dy, t[i], on ? OPT_BG : DIM);
-        x += glyph_w(t[i]);
-    }
+    x += hbar_draw(x, t, pn, on ? OPT_BG : DIM);
     if (ch)
-        draw24(hbar, BASE, x, hbar_dy, ch, on ? OPT_BG : INK);
+        hbar_draw(x, &ch, 1, on ? OPT_BG : INK);
 }
 
 /* 肩の 2 札を群の中心の左右に置く。
@@ -1683,8 +1703,8 @@ static void help_shoulder(int cx, const char *a, uint16_t ach, int on_a,
                                   const char *b, uint16_t bch, int on_b)
 {
     enum { GAP = 28 };
-    const int wa = u8_width(a) + (ach ? glyph_w(ach) : 0);
-    const int wb = u8_width(b) + (bch ? glyph_w(bch) : 0);
+    const int wa = u8_width(a) + (ach ? shaped_width(&ach, 1) : 0);
+    const int wb = u8_width(b) + (bch ? shaped_width(&bch, 1) : 0);
     /* ★★**群からはみ出させない。** 中心に置くだけだと、札が長い言語で
        **縦線を跨いで札が線に食われる**（英語 UI の `L2 small kana` で踏んだ）。
        ★はみ出したら**黙らずに言う**（説明行・ライセンスと同じ扱い）。 */
@@ -1875,11 +1895,7 @@ enum { HY_LIC_TITLE = 40, HLIC_RULE1 = 84,
 static void help_put_left(int x, const char *s, uint16_t color)
 {
     uint16_t t[80];
-    const int n = u8_to_u16(s, -1, t, (int)(sizeof t / sizeof *t));
-    for (int i = 0; i < n; i++) {
-        draw24(hbar, BASE, x, hbar_dy, t[i], color);
-        x += glyph_w(t[i]);
-    }
+    hbar_draw(x, t, u8_to_u16(s, -1, t, (int)(sizeof t / sizeof *t)), color);
 }
 
 static void license_open(void)
@@ -2093,6 +2109,16 @@ static void help_open(void)
     paint_screen(BG);
 }
 
+/* 席から UI 言語を導く。★★**ヒンディー語だけ UI が無い**ので英語で読む
+   （`ui.h` の頭書き ―― 図と表の描画が合字を持たないため）。
+   ★**番号の偶然に頼らない** —— SEAT_* と UI_* はたまたま 0..2 が重なるが、
+     どちらかが増えた日に黙って壊れる。 */
+static int ui_lang_for_seat(int s)
+{
+    return s == SEAT_EN ? UI_EN : s == SEAT_KO ? UI_KO
+         : s == SEAT_HI ? UI_EN : UI_JA;
+}
+
 /* ---- 起動画面（UI 言語の選択）----
  *
  * ★★**最初に出るのがこれ**（Zenmai の `lang_menu` と同じ形）——
@@ -2112,10 +2138,10 @@ static int boot_dy(void)
         int n = u8_to_u16(UI_BOOT_TITLE, -1, t, max);
         n += u8_to_u16(UI_BOOT_SUB, -1, t + n, max - n);
         n += u8_to_u16(UI_BOOT_WORK, -1, t + n, max - n);
-        for (int i = 0; i < UI_LANG_N; i++) {
-            n += u8_to_u16(UI[i].boot_name, -1, t + n, max - n);
+        for (int i = 0; i < UI_SEAT_N; i++)
+            n += u8_to_u16(UI_SEAT_NAME[i], -1, t + n, max - n);
+        for (int i = 0; i < UI_LANG_N; i++)
             n += u8_to_u16(UI[i].boot_hint, -1, t + n, max - n);
-        }
         dy = ink_dy(t, n);
         done = 1;
     }
@@ -2129,20 +2155,23 @@ static void boot_line(int y, const char *s, uint16_t color, int on)
     help_band(y, 0);
 }
 
+/* ★選択肢が 4 つ（席）なので、案内との間を空け直した。 */
 enum { BY_TITLE = 84, BY_SUB = 124, BY_RULE = 162, BY_WORK = 184,
-       BY_LANG = 244, BY_LANG_LEAD = 40, BY_HINT = 398 };
+       BY_LANG = 236, BY_LANG_LEAD = 38, BY_HINT = 412 };
 
 static void boot_choices(int sel)
 {
-    for (int i = 0; i < UI_LANG_N; i++)
-        boot_line(BY_LANG + i * BY_LANG_LEAD, UI[i].boot_name,
+    for (int i = 0; i < UI_SEAT_N; i++)
+        boot_line(BY_LANG + i * BY_LANG_LEAD, UI_SEAT_NAME[i],
                   i == sel ? OPT_BG : INK, i == sel);
-    boot_line(BY_HINT, UI[sel].boot_hint, DIM, 0);
+    /* ★案内は**選んだ席の UI 言語**で出す（何語で読むことになるかが分かる）。 */
+    boot_line(BY_HINT, UI[ui_lang_for_seat(sel)].boot_hint, DIM, 0);
 }
 
+/* 戻り値 = 選んだ**席**（UI 言語はそこから導く）。 */
 static int lang_menu(void)
 {
-    int sel = UI_JA;
+    int sel = SEAT_JA;
     hbar_dy = boot_dy();
     paint_screen(OPT_BG);
     boot_line(BY_TITLE, UI_BOOT_TITLE, ACCENT, 0);
@@ -2179,11 +2208,11 @@ static int lang_menu(void)
         ls_dirs(axes, ls);
         int moved = 0;
         if ((edge & BTN_UP) || (ls[2] && !lsp[2])) {
-            sel = (sel + UI_LANG_N - 1) % UI_LANG_N;
+            sel = (sel + UI_SEAT_N - 1) % UI_SEAT_N;
             moved = 1;
         }
         if ((edge & BTN_DOWN) || (ls[3] && !lsp[3])) {
-            sel = (sel + 1) % UI_LANG_N;
+            sel = (sel + 1) % UI_SEAT_N;
             moved = 1;
         }
         for (int i = 0; i < 4; i++)
@@ -2515,19 +2544,26 @@ int main(void)
     /* ★★**最初の画面は UI 言語の選択**（`lang_menu` の頭書き）。表示オンもその中。
        ★変換の初期化（辞書 19MB）より**先に**置く —— 待つあいだ画面が真っ暗だと
          「起動していない」に見える。
-       ★★**`HIGGINS_LANG` があれば訊かない。** 台本（検査）は毎回ここを通らせたくない
-         —— 通すと**既存 33 本の絵が起動画面のぶんずれる**。★起動画面そのものは
+       ★★**`HIGGINS_SEAT` があれば訊かない。** 台本（検査）は毎回ここを通らせたくない
+         —— 通すと**既存の絵が起動画面のぶんずれる**。★起動画面そのものは
          環境変数なしの台本（`lang*.script`）で見る。
-       ★実機で言語を決め打ちしたい人にも使える（`Higgins.sh` に 1 行書けばよい）。 */
+       ★★**UI 言語は席から導くが、`HIGGINS_UI` で切り離せる** —— 検査は
+         「全 UI 言語 × 全席」を叩きたいので、**席と UI を別々に指せる口**が要る
+         （`native/uicheck.sh`）。★実機で決め打ちしたい人にも使える。 */
     pad_try_analog();
     {
-        const char *env = getenv("HIGGINS_LANG");
-        if (env && *env) {
-            ui_lang = !strcmp(env, "en") ? UI_EN : !strcmp(env, "ko") ? UI_KO : UI_JA;
+        const char *es = getenv("HIGGINS_SEAT");
+        if (es && *es) {
+            seat = !strcmp(es, "en") ? SEAT_EN : !strcmp(es, "ko") ? SEAT_KO
+                 : !strcmp(es, "hi") ? SEAT_HI : SEAT_JA;
             gpu_display_on();
         } else {
-            ui_lang = lang_menu();
+            seat = lang_menu();
         }
+        ui_lang = ui_lang_for_seat(seat);
+        const char *eu = getenv("HIGGINS_UI");
+        if (eu && *eu)
+            ui_lang = !strcmp(eu, "en") ? UI_EN : !strcmp(eu, "ko") ? UI_KO : UI_JA;
     }
     paint_screen(BG);
 
@@ -2541,8 +2577,6 @@ int main(void)
     const int len = (int)(_binary_script_txt_end - _binary_script_txt_start);
     if (!hg_eliza_init(HG_JA, _binary_script_txt_start, len, 0))
         say("スクリプトが読めない。", INK);
-    else
-        say(hg_eliza_greeting(HG_JA), INK);
     /* ★英語の席は**組み込みメッセージを既定（ON）のまま**にする —— あれは英語の
        文字列なので、英語の相手には嘘にならない。upstream いわく「Weizenbaum の
        ELIZA は組み込みメッセージを使っていた」ので、原典の席では触らないのが筋。 */
@@ -2564,10 +2598,19 @@ int main(void)
     if (!hg_eliza_init(HG_HI, _binary_script_hi_txt_start, len_hi, 0))
         say("ヒンディー語のスクリプトが読めない。", INK);
 
+    /* ★★**挨拶は「選んだ席」のもの**（実機の指摘・2026-09-04）—— 入り口で選んだのに
+       本文が日本語で始まるのは変だった。★4 席とも読み込むのは変わらない（Select で回る）。 */
+    say(hg_eliza_greeting(seat_slot()), INK);
+
     view_bottom();
     render_window();
-    const uint16_t ind0 = 0x3042;      /* 「あ」 */
-    draw_input(0, 0, 0, &ind0, 1, 0, -1, -1, -1, -1);
+    /* ★右下の箱も席のもの（日本語なら「あ」、韓国語なら「ㅇ」…）。
+       ★**本文と同じ `row_indicator` から引く** —— ここだけ直に書くと席を足したとき
+         起動直後の 1 画面だけ古い字が出る。 */
+    uint16_t ind0[4];
+    uint16_t mark0 = 0;
+    const int ilen0 = row_indicator(0, 0, ind0, &mark0);
+    draw_input(0, 0, 0, ind0, ilen0, mark0, -1, -1, -1, -1);
     interactive();
     return 0;
 }

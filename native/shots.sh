@@ -47,17 +47,17 @@ for f in *.script; do
     rm -f "$OUT/$f.raw"
     rm -rf "$PROF"
     mkdir -p "$PROF"
-    # ★★**言語は環境変数で固定する。** 起動画面を通すと**既存の台本が全部
+    # ★★**席は環境変数で固定する。** 起動画面を通すと**既存の台本が全部
     #   ずれる**（ポーリング回数が時間軸なので、頭で消費したぶん後ろへ動く）。
     #   ★起動画面そのものは `lang*.script` で見る —— そこだけ変数を渡さない。
     case "$f" in
-        lang*) LANGENV= ;;
-        *)     LANGENV="ja" ;;
+        lang*) SEATENV= ;;
+        *)     SEATENV="ja" ;;
     esac
     SDL_VIDEODRIVER=offscreen ZENMAI_SCRIPT="$f" ZENMAI_STOP="$stop" \
         ZENMAI_RAW="$OUT/$f.raw" ZENMAI_FONT="$PWD/higgins.otf" \
         ZENMAI_FONT_DEVA="$PWD/higgins-deva.ttf" HIGGINS_PROFILE="$PROF" \
-        HIGGINS_LANG="$LANGENV" \
+        HIGGINS_SEAT="$SEATENV" \
         ./higgins > /dev/null 2>&1 || true
     if [ ! -s "$OUT/$f.raw" ]; then
         printf '%-22s ★絵が出なかった（stop=%s）\n' "$f" "$stop"

@@ -44,6 +44,15 @@ enum { UI_STK_COLS = 6, UI_STK_ROWS = 3 };
    固有名詞に近く、どの言語で読む人にも同じものを指すため。
    ★作品名に 4 席の名を並べたくなるが、**हिन्दी は合字を持つ**ので出さない
    （上の UI_LANG_N の注記）。 */
+/* ★★**起動画面で選ぶのは「席」（話す相手）**（実機の指摘・2026-09-04）——
+   入り口で English を選んだのに本文が日本語で始まるのは、やはり変だった。
+   ★名前は**その言語の自称**で書く（言語に依らないので UiText の外）。
+   ★★`हिन्दी` は**合字を持つ**（न् + द）ので、図と表の描画を `shape_run` の経路へ
+   移してから出している —— `draw24` を並べるだけでは正しい絵にならない。 */
+static const char *const UI_SEAT_NAME[UI_SEAT_N] = {
+    "日本語", "English", "한국어", "हिन्दी",
+};
+
 static const char *const UI_BOOT_TITLE = "Higgins";
 static const char *const UI_BOOT_SUB   = "ELIZA and a game controller";
 static const char *const UI_BOOT_WORK  = "DOCTOR (1966)";
@@ -94,8 +103,7 @@ typedef struct {
     const char *stick_head[UI_STK_COLS];
     const char *stick[UI_SEAT_N][UI_STK_ROWS][UI_STK_COLS];
     const char *note[UI_SEAT_N][UI_NOTE_N];
-    /* 起動画面。★boot_name は**その言語で書く**（選ぶ人が読むのだから）。 */
-    const char *boot_name;
+    /* 起動画面の案内。★選んだ席の UI 言語で出す（席の名前は UI_SEAT_NAME）。 */
     const char *boot_hint;
 } UiText;
 
@@ -143,7 +151,6 @@ static const UiText UI[UI_LANG_N] = {
             },
         },
 
-        .boot_name = "日本語",
         .boot_hint = "話しているとき Start でメニュー",
 
         .note = {
@@ -204,7 +211,6 @@ static const UiText UI[UI_LANG_N] = {
             },
         },
 
-        .boot_name = "English",
         .boot_hint = "Press START for the menu",
 
         .note = {
@@ -263,7 +269,6 @@ static const UiText UI[UI_LANG_N] = {
             },
         },
 
-        .boot_name = "한국어",
         .boot_hint = "대화 중 START 로 메뉴",
 
         .note = {
