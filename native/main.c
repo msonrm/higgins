@@ -27,6 +27,7 @@
 #include "tsunagi_ko.h"
 #include "eliza_bridge.h"
 #include "conv.h"
+#include "ui.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -73,6 +74,10 @@ static void paint_screen(uint16_t color)
      （`GpFrameDeva` / `gp_step_deva`。input.h の注記）。 */
 enum { SEAT_JA = 0, SEAT_EN = 1, SEAT_KO = 2, SEAT_HI = 3, SEAT_N = 4 };
 static int seat;
+
+/* 画面の文言に使う言語（`ui.h` の添字）。★**席とは別の軸**で、いまは日本語で固定。
+   ★選ばせる口はまだ無い —— 器だけ先に作ってある（ui.h の頭書き）。 */
+static int ui_lang = UI_JA;
 
 /* 右スティック↓ の連打（句読点の巡回）。★**file scope にあるのは、
    「他の入力が来たら巡回を切る」を comp_insert / comp_bs / caret_set の中で
@@ -923,14 +928,16 @@ static void conv_accept(void)
  * ★Start で開く（実機の指摘・2026-08-31）。はじめは「長押しで終わる」形にしたが、
  *   **実機では反応しなかった**（台本では 60 field で抜ける。原因は追えていない）。
  *   ★どのみち**目に見える反応があるほうが確実**で、Zenmai も同じ形にしてある。
- * ★いまは「つづける / やめる」だけ。**打ち方の絵とライセンスはここに足す。**
+ * ★いまは「つづける / 文字入力方法 / やめる」。**ライセンスもここに足す。**
  * ★地色は濃い藍（Zenmai の OPT_BG）—— 本文の外側だと地色だけで分かるので枠線は要らない、
  *   という実機の判断があったが、こちらは板が小さいので枠も引く。
+ * ★★**項目は `ui.h` から引く。** 文言をここへ直に書くと、UI 言語を足すときに
+ *   「画面のどこに文字列があるか」を数え上げる形になり、いつか 1 つ取り残す。
  */
 #define OPT_BG   0x1C62
 #define OPT_EDGE 0x36B9
 
-static const char *const MENU[] = { "つづける", "やめる" };
+#define MENU(i) (UI[ui_lang].menu[i])
 /* ★高さは「上下の余白が同じ」になるように決める。
    帯は各行の 4px 上から MENU_ROW なので、上の余白 = 12-4 = 8。
    下も 8 にするには MENU_H = N*MENU_ROW + 16（+24 にしていたら下だけ 16 になって、
@@ -940,20 +947,22 @@ static const char *const MENU[] = { "つづける", "やめる" };
      下の余白が 8 → 2 になった**（実機の指摘・2026-09-03）。
      ★同じ形を `render.h` の BODY_H / CMD_Y / WIN_H でも踏んでいる ——
        **器を前提にした数は、器から導いておかないと必ず 1 つ直し忘れる。** */
-enum { MENU_N = 2, MENU_W = 320, MENU_ROW = BASE + 8, MENU_H = MENU_N * MENU_ROW + 16 };
+enum { MENU_N = UI_MENU_N, MENU_W = 320, MENU_ROW = BASE + 8,
+       MENU_H = MENU_N * MENU_ROW + 16 };
 static uint16_t menubox[MENU_H][W];
 
-/* ★**2 行を同じ位置に座らせる**ため、器は全行まとめて測る（ind_dy と同じ考え）。 */
+/* ★**全行を同じ位置に座らせる**ため、器は全行まとめて測る（ind_dy と同じ考え）。
+   ★覚え直しの合図は **UI 言語**（文言が替われば出る字も替わる）。 */
 static int menu_dy(void)
 {
-    static int dy, done;
-    if (!done) {
+    static int dy, cached = -1;
+    if (cached != ui_lang) {
         uint16_t t[64];
         int n = 0;
         for (int i = 0; i < MENU_N; i++)
-            n += u8_to_u16(MENU[i], -1, t + n, (int)(sizeof t / sizeof *t) - n);
+            n += u8_to_u16(MENU(i), -1, t + n, (int)(sizeof t / sizeof *t) - n);
         dy = ink_dy(t, n);
-        done = 1;
+        cached = ui_lang;
     }
     return dy;
 }
@@ -970,7 +979,7 @@ static void menu_draw(int sel)
     const int dy = menu_dy();          /* ★縦は ink で中央へ（インジケータと同じ規則） */
     for (int i = 0; i < MENU_N; i++) {
         uint16_t t[32];
-        const int n = u8_to_u16(MENU[i], -1, t, 32);
+        const int n = u8_to_u16(MENU(i), -1, t, 32);
         int w = 0;
         for (int k = 0; k < n; k++)
             w += glyph_w(t[k]);
@@ -990,7 +999,9 @@ static void menu_draw(int sel)
     upload_rect(x, body_top + (body_h - MENU_H) / 2, MENU_W, MENU_H, menubox);
 }
 
-/* 1 = やめる / 0 = つづける */
+/* 戻り値 = 選ばれた項目（`ui.h` の UI_MENU_*）。
+   ★**番号ではなく名前で返す** —— 項目が 2 つのときは「1 = やめる」で済んでいたが、
+     あいだに 1 行足すと**その 1 が別の意味になる**（呼ぶ側は気づかない）。 */
 static int menu_open(void)
 {
     int sel = 0;
@@ -1030,7 +1041,357 @@ static int menu_open(void)
         if (edge & (BTN_CIR | BTN_X | BTN_TRI | BTN_SQ | BTN_L3))
             return sel;
         if (edge & BTN_START)          /* Start で開いて Start で閉じる */
-            return 0;
+            return UI_MENU_CONT;
+    }
+}
+
+/* ---- 打ち方の図 ----
+ *
+ * ★**本文を持たない。押している状態がそのまま図に出る**のが説明になる
+ *   （Zenmai の `help_draw` から。並びは**実物のコントローラのまま** ——
+ *   上から L2 / L1 / 十字と面ボタン。離しすぎると 1 行の字の並びに見えるので、
+ *   左右のボタンは中心へ寄せる）。
+ * ★★**札は入力表から引く**（`gp_cell` / `ko_vowel_char` / `deva_stop_char`）。
+ *   写して並べると、**図に出ている字と実際に入る字がずれても誰も気づけない**
+ *   —— labo の web 版で踏んだ事故で、Zenmai がその戒めを窓（`gp_cell`）にしてある。
+ * ★この頁だけは**面ボタンで戻らない**。面ボタンは字を出すボタンそのものなので、
+ *   出口は Start の 1 つに絞る。
+ * ★★**席で骨格が替わる。** 日本語・英語・韓国語は「左手＝行 / 右手＝段」で同じだが、
+ *   ヒンディー語だけは**左スティックで組（varga）を latch し、十字でその中を選ぶ** ——
+ *   だから左群の見出しが「行」ではなく「いま選んでいる組の 5 つ」になる。
+ *   ★latch は図の中でも動かす（倒すと 5 字がまるごと替わる）—— ★ただし
+ *   **回す規則は input.c のもの**を借りて、出力だけ捨てる。図が独自に回すと、
+ *   規則が 2 か所になって必ずずれる。
+ */
+enum { HLX = 168, HRX = 472, HDX = 60 };             /* 群の中心 x と左右のずれ */
+enum { HY_TITLE = 24,
+       HY_L2 = 76, HY_L1 = 116,                      /* 肩（外側が上） */
+       HY0 = 164, HY1 = 206, HY2 = 248,              /* 上 / 中 / 下 */
+       HY5 = 300,                                    /* 機能キーの札 */
+       HY_NOTE = 352, HNOTE_LEAD = 34 };             /* 図に出せないものの説明 */
+enum { HDIV_X = 318, HDIV_Y = 68, HDIV_H = 220 };    /* 左右の群を分ける縦線 */
+
+static uint16_t hbar[BASE][W];
+
+/* 左群（十字キー側）の見出し。★席ごとに「行」の意味が違うが、**表から引く**のは同じ。 */
+static uint16_t help_left_char(int row)
+{
+    if (seat == SEAT_KO)
+        return ko_row_char(row);
+    if (seat == SEAT_EN)
+        return gp_cell(1, row, 0);     /* ★R1 の数字がその行の見出し（2 = abc） */
+    return gp_row_char(row);
+}
+
+/* 右群（面ボタン側）のマス。rt = R2 の層（★韓国語だけ替わる ―― ㅑㅕㅛㅠㅣ）。 */
+static uint16_t help_cell_char(int row, int vowel, int rt)
+{
+    if (seat == SEAT_KO)
+        return ko_vowel_char(vowel, rt);
+    return gp_cell(seat == SEAT_EN, row, vowel);
+}
+
+/* 図に出しうる字ぜんぶ（＝器を決める一覧）。★`ind_alphabet` と同じ考え方だが、
+   こちらは**札の文言（L1 / SELECT …）も同じ帯に乗る**ので一緒に測る。
+   ★**0（空きマス）は入れない** —— draw24 に 0 を渡すと .notdef（黒い四角）が
+     出て、ink が字より広くなる。 */
+static int help_alphabet(uint16_t *out, int max)
+{
+    const UiText *u = &UI[ui_lang];
+    const char *const lbl[] = { u->l1[seat], u->l2[seat], u->r2[seat], u->r1,
+                                u->fn_select, u->fn_start };
+    int n = 0;
+    for (unsigned i = 0; i < sizeof lbl / sizeof *lbl && n < max; i++)
+        n += u8_to_u16(lbl[i], -1, out + n, max - n);
+
+    if (seat == SEAT_HI) {
+        DevaMachine m;
+        deva_machine_init(&m);
+        for (int d = 0; d <= 4; d++) {         /* 組 5 つ × その中の 5 つ */
+            m.lsLatch = d;
+            for (int i = 0; i < 5 && n < max; i++)
+                if (deva_stop_char(&m, 0, i))
+                    out[n++] = deva_stop_char(&m, 0, i);
+        }
+        m.nonVarga = 1;                        /* 非 varga 層（L3）の 4+4 */
+        for (int lt = 0; lt <= 1; lt++)
+            for (int i = 0; i < 4 && n < max; i++)
+                if (deva_stop_char(&m, lt, i))
+                    out[n++] = deva_stop_char(&m, lt, i);
+        for (int lt = 0; lt <= 1; lt++)        /* 母音（独立形） */
+            for (int v = 0; v < 5 && n < max; v++)
+                if (deva_vowel_char(v, lt))
+                    out[n++] = deva_vowel_char(v, lt);
+        return n;
+    }
+    for (int row = 0; row < 10 && n < max; row++) {
+        if (help_left_char(row))
+            out[n++] = help_left_char(row);
+        for (int rt = 0; rt <= (seat == SEAT_KO); rt++)
+            for (int v = 0; v < 5 && n < max; v++)
+                if (help_cell_char(row, v, rt))
+                    out[n++] = help_cell_char(row, v, rt);
+    }
+    return n;
+}
+
+/* 帯の中の下げ幅。★席が変わるまで動かない（`ind_dy` と同じ形）。 */
+static int help_dy(void)
+{
+    static int dy, cached = -1;
+    if (cached != seat) {
+        uint16_t a[192];
+        dy = ink_dy(a, help_alphabet(a, (int)(sizeof a / sizeof *a)));
+        cached = seat;
+    }
+    return dy;
+}
+
+/* 帯に中央揃えで 1 語置く（帯はあとでまとめて送る）。
+   ★押しているものは**面を塗って字を抜く** —— 字の色だけを変えても、藍の上では
+     差が小さくて分からない（Zenmai が実機で言われた）。メニューの選択行と同じ反転。 */
+static void help_put(int cx, const uint16_t *s, int n, uint16_t color, int on)
+{
+    int w = 0;
+    for (int i = 0; i < n; i++)
+        w += glyph_w(s[i]);
+    int x = cx - w / 2;
+    if (x < 10)                        /* ★fill_rect は範囲を見ないので、ここで守る */
+        x = 10;
+    if (x + w > W - 10)
+        x = W - 10 - w;
+    if (on) {
+        fill_rect(hbar, x - 8, 0, w + 16, BASE, ACCENT);
+        color = OPT_BG;                /* 面の上は地色で抜く */
+    }
+    const int dy = help_dy();
+    for (int i = 0; i < n; i++) {
+        draw24(hbar, BASE, x, dy, s[i], color);
+        x += glyph_w(s[i]);
+    }
+}
+
+static void help_put_u8(int cx, const char *s, uint16_t color, int on)
+{
+    uint16_t t[80];
+    help_put(cx, t, u8_to_u16(s, -1, t, (int)(sizeof t / sizeof *t)), color, on);
+}
+
+static void help_put1(int cx, uint16_t ch, uint16_t color, int on)
+{
+    if (ch)                            /* ★表に穴がある（や行の い/え）ときは置かない */
+        help_put(cx, &ch, 1, color, on);
+}
+
+/* 「R1 あ」のような**動く札**。★字は面ボタンと同じ色にする —— 役が同じ（字を出す）
+   だから。前置き（`R1 `）の側は他の肩の札と同じ控えめのまま。 */
+static void help_put_key(int cx, const char *pre, uint16_t ch, int on)
+{
+    uint16_t t[16];
+    const int pn = u8_to_u16(pre, -1, t, 12);
+    int w = 0;
+    for (int i = 0; i < pn; i++)
+        w += glyph_w(t[i]);
+    if (ch)
+        w += glyph_w(ch);
+    int x = cx - w / 2;
+    if (x < 10)
+        x = 10;
+    if (on)
+        fill_rect(hbar, x - 8, 0, w + 16, BASE, ACCENT);
+    const int dy = help_dy();
+    for (int i = 0; i < pn; i++) {
+        draw24(hbar, BASE, x, dy, t[i], on ? OPT_BG : DIM);
+        x += glyph_w(t[i]);
+    }
+    if (ch)
+        draw24(hbar, BASE, x, dy, ch, on ? OPT_BG : INK);
+}
+
+/* 帯を**縦の仕切りごと**送る。★仕切りを毎回引き直すとボタンを押すたびにちらつく
+   （Zenmai が縁で踏んだ）。帯が仕切りを持てば消えないので、引き直す必要がなくなる。 */
+static void help_band(int y, int div)
+{
+    if (div)
+        for (int r = 0; r < BASE; r++)
+            hbar[r][HDIV_X] = hbar[r][HDIV_X + 1] = DIM;
+    gp0_upload(0, y, W, BASE, hbar[0]);
+}
+
+/* かなの骨格を共有する 3 席（日本語 / 英語 / 韓国語）。 */
+static void help_draw_kana(int p)
+{
+    const UiText *u = &UI[ui_lang];
+    const int base = (p & BTN_L1) ? 5 : 0;
+    const int row = pad_row(p), dir = row - base;
+    const int vowel = pad_vowel(p);
+    const int rt = (p & BTN_R2) != 0;
+
+    fill_rows(hbar, 0, BASE, OPT_BG);                  /* 肩（外側）: L2 / R2 */
+    help_put_u8(HLX, u->l2[seat], DIM, (p & BTN_L2) != 0);
+    help_put_u8(HRX, u->r2[seat], DIM, (p & BTN_R2) != 0);
+    help_band(HY_L2, 1);
+
+    fill_rows(hbar, 0, BASE, OPT_BG);                  /* 肩（内側）: L1 / R1 */
+    help_put_u8(HLX, u->l1[seat], DIM, (p & BTN_L1) != 0);
+    help_put_key(HRX, u->r1, help_cell_char(row, 0, rt), (p & BTN_R1) != 0);
+    help_band(HY_L1, 1);
+
+    fill_rows(hbar, 0, BASE, OPT_BG);                  /* 上: ↑ の行 / △ の字 */
+    help_put1(HLX, help_left_char(base + 2), INK, dir == 2);
+    help_put1(HRX, help_cell_char(row, 2, rt), INK, vowel == 2);
+    help_band(HY0, 1);
+
+    /* 中: ← 中 → の行 / □ ○ の字。★中央 = どの向きも押していないとき */
+    fill_rows(hbar, 0, BASE, OPT_BG);
+    help_put1(HLX - HDX, help_left_char(base + 1), INK, dir == 1);
+    help_put1(HLX,       help_left_char(base + 0), INK, dir == 0);
+    help_put1(HLX + HDX, help_left_char(base + 3), INK, dir == 3);
+    help_put1(HRX - HDX, help_cell_char(row, 1, rt), INK, vowel == 1);
+    help_put1(HRX + HDX, help_cell_char(row, 3, rt), INK, vowel == 3);
+    help_band(HY1, 1);
+
+    fill_rows(hbar, 0, BASE, OPT_BG);                  /* 下: ↓ の行 / × の字 */
+    help_put1(HLX, help_left_char(base + 4), INK, dir == 4);
+    help_put1(HRX, help_cell_char(row, 4, rt), INK, vowel == 4);
+    help_band(HY2, 1);
+}
+
+/* ヒンディー語。★左群は**いま latch している組の中の 4 つ**（十字 ↑→↓←）で、
+   ★**中央は空** —— 十字を押さないと子音は出ない（かなの席と違うところ）。
+   その代わり L1 の札が動く = その組の鼻音（ङ ञ ण न म）。 */
+static void help_draw_deva(int p, const DevaMachine *hm)
+{
+    const UiText *u = &UI[ui_lang];
+    const int lt = (p & BTN_L2) != 0;
+    const int dpad = pad_deva_dpad(p);
+    const int vowel = pad_vowel(p);
+
+    fill_rows(hbar, 0, BASE, OPT_BG);
+    help_put_u8(HLX, u->l2[seat], DIM, lt);
+    help_put_u8(HRX, u->r2[seat], DIM, (p & BTN_R2) != 0);
+    help_band(HY_L2, 1);
+
+    fill_rows(hbar, 0, BASE, OPT_BG);
+    help_put_key(HLX, u->l1[seat], deva_stop_char(hm, lt, 4), (p & BTN_L1) != 0);
+    help_put_key(HRX, u->r1, deva_vowel_char(0, lt), (p & BTN_R1) != 0);
+    help_band(HY_L1, 1);
+
+    fill_rows(hbar, 0, BASE, OPT_BG);
+    help_put1(HLX, deva_stop_char(hm, lt, 0), INK, dpad == 0);
+    help_put1(HRX, deva_vowel_char(2, lt), INK, vowel == 2);
+    help_band(HY0, 1);
+
+    fill_rows(hbar, 0, BASE, OPT_BG);
+    help_put1(HLX - HDX, deva_stop_char(hm, lt, 3), INK, dpad == 3);
+    help_put1(HLX + HDX, deva_stop_char(hm, lt, 1), INK, dpad == 1);
+    help_put1(HRX - HDX, deva_vowel_char(1, lt), INK, vowel == 1);
+    help_put1(HRX + HDX, deva_vowel_char(3, lt), INK, vowel == 3);
+    help_band(HY1, 1);
+
+    fill_rows(hbar, 0, BASE, OPT_BG);
+    help_put1(HLX, deva_stop_char(hm, lt, 2), INK, dpad == 2);
+    help_put1(HRX, deva_vowel_char(4, lt), INK, vowel == 4);
+    help_band(HY2, 1);
+}
+
+static void help_draw(int p, const DevaMachine *hm)
+{
+    const UiText *u = &UI[ui_lang];
+    if (seat == SEAT_HI)
+        help_draw_deva(p, hm);
+    else
+        help_draw_kana(p);
+
+    /* 機能キー。★札が説明しているのは**本文での**役 —— この画面での Start は
+       「もどる」なので、そちらは括弧に入れて光らせない（押したら実際に戻る）。 */
+    fill_rows(hbar, 0, BASE, OPT_BG);
+    help_put_u8(HLX, u->fn_select, DIM, (p & BTN_SELECT) != 0);
+    help_put_u8(HRX, u->fn_start, DIM, 0);
+    help_band(HY5, 0);
+}
+
+static void help_open(void)
+{
+    const UiText *u = &UI[ui_lang];
+    paint_screen(OPT_BG);
+
+    char t8[192];
+    snprintf(t8, sizeof t8, "%s%s%s", u->help_title, u->help_dash, u->seat[seat]);
+    fill_rows(hbar, 0, BASE, OPT_BG);
+    help_put_u8(W / 2, t8, ACCENT, 0);
+    help_band(HY_TITLE, 0);
+
+    /* ★図に出せないものだけを下に置く（右スティックの役・変換・巡回）。 */
+    for (int i = 0; i < UI_NOTE_N; i++) {
+        fill_rows(hbar, 0, BASE, OPT_BG);
+        help_put_u8(W / 2, u->note[seat][i], DIM, 0);
+        help_band(HY_NOTE + i * HNOTE_LEAD, 0);
+    }
+
+    /* ★縦の仕切りはここで 1 回だけ。以降は帯が運ぶ（help_band の注記）。 */
+    uint16_t line[HDIV_H * 2];
+    for (int i = 0; i < HDIV_H * 2; i++)
+        line[i] = DIM;
+    gp0_upload(HDIV_X, HDIV_Y, 2, HDIV_H, line);
+
+    /* ★★**latch は本文の続きから始める**（いま選んでいる組のまま図に入る）。
+       ★そのうえで、**いま押されているものを「もう見た」ことにする** —— しないと、
+         メニューを決めた指が肩やスティックに掛かっていただけで、図に入った瞬間に
+         組が回る（`carry_over_pad` と同じ配慮）。 */
+    DevaMachine hm = dvm;
+    uint8_t axes[4] = { 0x80, 0x80, 0x80, 0x80 };
+    int pp = pad_read_ex(axes);
+    if (pp < 0)
+        pp = 0;
+    {
+        GpFrameDeva df = deva_frame_of(pp, axes, 0, 0);
+        gp_sync_prev_deva(&hm, &df);
+    }
+    help_draw(pp, &hm);
+
+    int prev_p = pp, prev_latch = hm.lsLatch, prev_layer = hm.nonVarga, ms = 0;
+    for (;;) {
+        wait_fields(1);
+        ms += 17;                      /* 1 field ≒ 17ms（他と同じ刻み） */
+        const int p = pad_read_ex(axes);
+        if (p < 0)
+            continue;
+        const int edge = p & ~pp;
+        pp = p;
+        if (edge & BTN_START)          /* ★出口はここだけ */
+            return;
+        if (seat == SEAT_HI) {
+            /* ★**回す規則は input.c のもの**を借りて、出た字は捨てる。
+               図が独自に latch を回すと、規則が 2 か所になって必ずずれる。
+               ★★**`gp_step_deva` は prev を更新しない** —— 更新は呼ぶ側の責任で、
+                 `gp_sync_prev_deva` を忘れると**エッジが毎フレーム立ち続ける**。
+                 latch はトグルなので、押している間ずっと反転して**偶数フレームで
+                 元に戻り、「効いていない」ように見えた**（ここで踏んだ）。
+                 ★状態機械を借りるときは、**呼び出しの作法まで borrow する**
+                 （本文は step_deva_frame の末尾で同じことをしている）。 */
+            GpFrameDeva df = deva_frame_of(p, axes, 0, ms);
+            GpAction acts[4];
+            const int latch = hm.lsLatch, layer = hm.nonVarga;
+            const int n = gp_step_deva(&hm, &df, acts);
+            gp_sync_prev_deva(&hm, &df);
+            /* ★★**図は字を出さないので、latch の消費も起きていないことにする。**
+               varga の latch と非 varga 層は**子音 1 つで消える**（前置シフト）ので、
+               そのままだと**十字を押した瞬間に組が中立へ戻り、何が入る図なのか
+               読めなくなる**。★消費は出力とセットの規則なので、出力を捨てるなら
+               消費も捨てるのが筋 —— 規則を書き換えているのではなく、**適用していない**。 */
+            for (int i = 0; i < n; i++)
+                if (acts[i].deva_op == DEVA_OP_CONSONANT) {
+                    hm.lsLatch = latch;
+                    hm.nonVarga = layer;
+                }
+        }
+        if (p != prev_p || hm.lsLatch != prev_latch || hm.nonVarga != prev_layer) {
+            help_draw(p, &hm);
+            prev_p = p;
+            prev_latch = hm.lsLatch;
+            prev_layer = hm.nonVarga;
+        }
     }
 }
 
@@ -1507,8 +1868,11 @@ static void interactive(void)
         }
 
         if (edge & BTN_START) {        /* ★Start = メニュー */
-            if (menu_open())
+            const int chosen = menu_open();
+            if (chosen == UI_MENU_QUIT)
                 break;                 /* やめる */
+            if (chosen == UI_MENU_HELP)
+                help_open();           /* ★出口は Start だけ（help_open の頭書き） */
             /* 戻ったら本文を描き直し、押されたままのものを「もう見た」ことにする
                （★忘れると、選んだボタンに応じた字が入った状態で再開する）。 */
             render_window();

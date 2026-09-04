@@ -492,6 +492,22 @@ unsigned short deva_head_char(const DevaMachine *s, int ltNow)
     return DEVA_VARGA_HEAD[varga_of(s->lsLatch)];
 }
 
+unsigned short deva_stop_char(const DevaMachine *s, int ltNow, int idx)
+{
+    if (idx < 0 || idx >= DEVA_STOP_N)
+        return 0;
+    if (s->nonVarga)                   /* 非 varga 層は 4 つしかない（LB の席が空く） */
+        return idx < 4 ? (ltNow ? DEVA_SIBILANT[idx] : DEVA_SEMIVOWEL[idx]) : 0;
+    return DEVA_VARGA[varga_of(s->lsLatch)][idx];
+}
+
+unsigned short deva_vowel_char(int vowel, int ltNow)
+{
+    if (vowel < 0 || vowel >= 5)
+        return 0;
+    return ltNow ? DEVA_VOWEL_INDEP_LT[vowel] : DEVA_VOWEL_INDEP[vowel];
+}
+
 static int deva_push(GpAction out[4], int n, int op, unsigned short ch, unsigned short alt)
 {
     if (n >= 4)

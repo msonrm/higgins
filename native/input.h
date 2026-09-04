@@ -142,6 +142,12 @@ void deva_consume_rt(DevaMachine *s);
 /* 行インジケータ用: いま選ばれている varga の見出し字（無気無声）。
    ★非 varga 層のときはその層の頭を返す。 */
 unsigned short deva_head_char(const DevaMachine *s, int ltNow);
+/* 打ち方の図用: いま選ばれている varga の 1 つ（idx 0..3 = D-pad ↑→↓← / 4 = LB の鼻音）。
+   ★非 varga 層には鼻音の席が無いので idx 4 は 0 を返す。0 = そこは空。 */
+unsigned short deva_stop_char(const DevaMachine *s, int ltNow, int idx);
+/* 打ち方の図用: 面ボタンの母音（独立形。0 = そのボタンに母音は無い）。
+   ★**独立形を出す** —— matra（`ि`）は単体だと点にしか見えず、図の札にならない。 */
+unsigned short deva_vowel_char(int vowel, int ltNow);
 /* RT 連打サイクルを断つ(resolver.action 相当 — スティック等の出力前に呼ぶ) */
 void gp_break_rt_cycle(GpMachine *s);
 /* 行インジケータ用: その行のあ段の字。 */
