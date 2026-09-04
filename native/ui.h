@@ -38,10 +38,35 @@ enum { UI_STK_COLS = 6, UI_STK_ROWS = 3 };
    ★★**「つづける」は置かない**（実機の指摘・2026-09-04）—— Start で開いて
      Start で閉じられるので、閉じるためだけの項目は要らない（Zenmai も同じ）。
    ★UI_MENU_CONT は**項目ではなく「何も選ばずに閉じた」**を表すので負の値。 */
-enum { UI_MENU_CONT = -1, UI_MENU_HELP = 0, UI_MENU_QUIT = 1, UI_MENU_N = 2 };
+enum { UI_MENU_CONT = -1, UI_MENU_HELP = 0, UI_MENU_LICENSE = 1, UI_MENU_QUIT = 2,
+       UI_MENU_N = 3 };
+
+/* 同梱しているものと、その出どころ。
+   ★★**画面に出すのは帰属、全文はファイル**（配布物の `licenses/`）—— OFL も MIT も
+     「著作権表示とライセンス文を配布物に含める」ことを求めるので、**同梱していれば
+     要件は満たす**。画面の表は、それを**見える形にする**ためのもの。
+   ★★**行は英語のまま。** 固有名詞と法的表記なので、訳すと別のものを指してしまう
+     （`Fcitx contributors` を「Fcitx の貢献者」と書いたら、それは誰でもない）。
+     ★UI 言語で書くのは見出しと注記だけ。
+   ★★**`portmaster/build-port.sh` が入れる `licenses/` と 1 対 1**。片方だけ増やすと
+     画面が嘘になる —— 増減するときは両方を直すこと。
+   ★DOCTOR の日本語・韓国語・ヒンディー語訳は Higgins のもの（1 行目に含まれる）。 */
+enum { UI_LIC_N = 7 };
+typedef struct { const char *name, *license, *who; } UiLicense;
+static const UiLicense UI_LIC[UI_LIC_N] = {
+    { "Higgins",              "MIT",          "msonrm" },
+    { "ELIZA + DOCTOR 1966",  "CC0 1.0",      "Anthony Hay" },
+    { "Zenmai shell",         "MIT",          "msonrm" },
+    { "Mozc",                 "BSD 3-Clause", "Google Inc." },
+    { "fcitx5-mozc",          "BSD 3-Clause", "Fcitx project" },
+    { "Noto Sans CJK JP",     "OFL 1.1",      "Adobe, Google" },
+    { "Noto Sans Devanagari", "OFL 1.1",      "Noto Project" },
+};
 
 typedef struct {
     const char *menu[UI_MENU_N];
+    const char *lic_title;               /* ライセンス頁の見出し */
+    const char *lic_note[2];             /* その下の注記（★ここだけ UI 言語） */
     /* 肩の札。★L1 / L2 / R2 は席ごとの固定文字列、**R1 は動く札**（その行の
        いちばん左のマスそのもの）なので前置きだけを持つ。
        ★ヒンディー語の L1 も動く（varga ごとに鼻音が替わる）ので前置きだけ。 */
@@ -59,7 +84,12 @@ typedef struct {
 
 static const UiText UI[UI_LANG_N] = {
     [UI_JA] = {
-        .menu = { "文字入力方法", "やめる" },
+        .menu = { "文字入力方法", "ライセンス", "やめる" },
+        .lic_title = "ライセンス",
+        .lic_note = {
+            "全文は licenses/ フォルダにあります",
+            "DOCTOR の訳も Higgins に含まれます",
+        },
 
         /* ★ヒンディー語の L1 だけ前置き（鼻音の字が varga で替わる）。 */
         .l1 = { "L1 はまやらわ", "L1 6〜0", "L1 ㅁㅂㅅㅈㅎ", "L1 " },
@@ -109,9 +139,11 @@ static const UiText UI[UI_LANG_N] = {
                 "左手で子音、右手で母音。R2 は母音より先に押す",
                 "十字だけを押すと받침になる（L2 = ㅇ받침）",
             },
-            {   /* ヒンディー語 */
-                "左スティックで組をえらぶ（倒すたびに切り替わる）",
-                "倒さないと प の組。組は子音 1 つで中立へ戻る",
+            {   /* ★ヒンディー語。1 行目に latch の作法（倒すたび切替・中立は प）を
+                   まとめ、2 行目は**非 varga 層で L2 を足したとき**にあてる ——
+                   表の `य〜` だけでは श ष स ह に届かない（実機の指摘・2026-09-04）。 */
+                "左スティックで組をえらぶ（倒すたび切替・中立は प）",
+                "य〜 の層で L2 を足すと श ष स ह になる",
             },
         },
     },

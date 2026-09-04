@@ -1842,6 +1842,107 @@ static void help_draw(int p, int row)
     draw_input(comp, clen, caret, ind, ilen, mark, fixed, caret, -1, -1);
 }
 
+/* ---- ライセンス ----
+ *
+ * ★★**画面に出すのは帰属、全文はファイル**（配布物の `licenses/`）。OFL も MIT も
+ *   「著作権表示とライセンス文を配布物に含める」ことを求めるので、★**同梱していれば
+ *   要件は満たす** —— 画面の表は、それを**見える形にする**ためのもの。
+ * ★★**行は英語のまま**（`ui.h` の頭書き）。訳すと別のものを指してしまう。
+ * ★出口は Start だけ（打ち方の図と同じ作法）。★試し打ち欄は出さない ——
+ *   ここは読む頁で、打つ頁ではない。
+ */
+enum { HY_LIC_TITLE = 40, HLIC_RULE1 = 84,
+       HY_LIC = 100, HLIC_LEAD = 34,
+       HLIC_RULE2 = 356, HY_LIC_NOTE = 366, HLIC_NOTE_LEAD = 32 };
+
+/* 帯に左揃えで 1 語置く（表の列を揃えるため。★中央揃えだと列が波打つ）。 */
+static void help_put_left(int x, const char *s, uint16_t color)
+{
+    uint16_t t[80];
+    const int n = u8_to_u16(s, -1, t, (int)(sizeof t / sizeof *t));
+    const int dy = help_dy();
+    for (int i = 0; i < n; i++) {
+        draw24(hbar, BASE, x, dy, t[i], color);
+        x += glyph_w(t[i]);
+    }
+}
+
+static void license_open(void)
+{
+    const UiText *u = &UI[ui_lang];
+    paint_screen(OPT_BG);
+
+    /* ★列は**中身を測って割り付ける**（表と同じ判断 ―― 固定値だと字を替えたときに
+       黙って重なる）。名前 / ライセンス / 誰の、の 3 列。 */
+    int w0 = 0, w1 = 0;
+    for (int i = 0; i < UI_LIC_N; i++) {
+        const int a = u8_width(UI_LIC[i].name), b = u8_width(UI_LIC[i].license);
+        if (a > w0)
+            w0 = a;
+        if (b > w1)
+            w1 = b;
+    }
+    int gap = 24;
+    int x1 = MARGIN + w0 + gap, x2 = x1 + w1 + gap;
+    /* ★はみ出すなら隙間から削る（列は詰まっても、切れるよりよい）。 */
+    int over = 0;
+    for (int i = 0; i < UI_LIC_N; i++) {
+        const int end = x2 + u8_width(UI_LIC[i].who);
+        if (end > W - MARGIN)
+            over = 1;
+    }
+    if (over) {
+        gap = 12;
+        x1 = MARGIN + w0 + gap;
+        x2 = x1 + w1 + gap;
+        /* ★★**詰めても入らないなら黙らずに言う**（説明行と同じ考え方）——
+           画面では右端で切れるだけなので、開発機で撮っていても気づけない。 */
+        for (int i = 0; i < UI_LIC_N; i++)
+            if (x2 + u8_width(UI_LIC[i].who) > W - MARGIN)
+                fprintf(stderr, "license: 行がはみ出している: %s / %s / %s\n",
+                        UI_LIC[i].name, UI_LIC[i].license, UI_LIC[i].who);
+    }
+
+    fill_rows(hbar, 0, BASE, OPT_BG);
+    help_put_u8(W / 2, u->lic_title, ACCENT, 0);
+    help_band(HY_LIC_TITLE, 0);
+
+    for (int i = 0; i < UI_LIC_N; i++) {
+        fill_rows(hbar, 0, BASE, OPT_BG);
+        help_put_left(MARGIN, UI_LIC[i].name, INK);
+        help_put_left(x1, UI_LIC[i].license, DIM);
+        help_put_left(x2, UI_LIC[i].who, DIM);
+        help_band(HY_LIC + i * HLIC_LEAD, 0);
+    }
+
+    for (int i = 0; i < 2; i++) {
+        fill_rows(hbar, 0, BASE, OPT_BG);
+        help_put_u8(W / 2, u->lic_note[i], DIM, 0);
+        help_band(HY_LIC_NOTE + i * HLIC_NOTE_LEAD, 0);
+    }
+
+    uint16_t rule[TEXT_W * 2];
+    for (int i = 0; i < TEXT_W * 2; i++)
+        rule[i] = DIM;
+    gp0_upload(MARGIN, HLIC_RULE1, TEXT_W, 2, rule);
+    gp0_upload(MARGIN, HLIC_RULE2, TEXT_W, 2, rule);
+
+    int pp = pad_read();
+    if (pp < 0)
+        pp = 0;
+    for (;;) {
+        wait_fields(1);
+        const int p = pad_read();
+        if (p < 0)
+            continue;
+        const int edge = p & ~pp;
+        pp = p;
+        if (edge & BTN_START)
+            break;
+    }
+    paint_screen(BG);                  /* ★全画面を使ったのはこちらなので、返すのもこちら */
+}
+
 /* 試し打ちを 1 行に収める。
    ★★**伸びると `draw_input` が本文窓を作り直し、図が本文で塗り潰される。**
      欄は打った量で 3 行まで伸びる作りなので、ここで頭を抑える。
@@ -2098,6 +2199,8 @@ static void interactive(void)
                 break;                 /* やめる */
             if (chosen == UI_MENU_HELP)
                 help_open();           /* ★出口は Start だけ（help_open の頭書き） */
+            if (chosen == UI_MENU_LICENSE)
+                license_open();
             /* 戻ったら本文を描き直し、押されたままのものを「もう見た」ことにする
                （★忘れると、選んだボタンに応じた字が入った状態で再開する）。 */
             render_window();
