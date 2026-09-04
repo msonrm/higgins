@@ -19,6 +19,16 @@ uint16_t ko_row_char(int row)
     return KO_ROW_CHAR[row >= 0 && row < 10 ? row : 0];
 }
 
+/* ★**互換ジャモの중성は U+314F から 21 個が중성 index の順に並んでいる**
+   （ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ）。だから表の index に足すだけでよく、
+   ★**対応表をもう 1 つ持たずに済む** —— 持てば、表を直したときに片方だけ古くなる。 */
+uint16_t ko_vowel_char(int vowel, int shifted)
+{
+    if (vowel < 0 || vowel >= 5)
+        return 0;
+    return (uint16_t)(0x314F + (shifted ? KO_NUCLEUS_SHIFTED[vowel] : KO_NUCLEUS_BASE[vowel]));
+}
+
 void ko_init(KoComposer *k)
 {
     k->onset = k->nucleus = k->coda = k->rollback_coda = -1;
