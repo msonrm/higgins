@@ -333,16 +333,18 @@ static int ind_alphabet(uint16_t *out, int max)
 {
     int n = 0;
     if (seat == SEAT_HI) {
-        /* varga 5 つの頭字 ＋ 非 varga 層の 2 つ（半母音 / LT で摩擦音） */
+        /* varga 5 つの頭字 ＋ 非 varga 層の 2 つ（半母音 य / 摩擦音 श）。
+           ★層は L3 の巡回で決まるので、LT ではなく**層そのもの**を回す。 */
         DevaMachine m;
         deva_machine_init(&m);
         for (int d = 0; d <= 4 && n < max; d++) {
             m.lsLatch = d;
-            out[n++] = deva_head_char(&m, 0);
+            out[n++] = deva_head_char(&m);
         }
-        m.nonVarga = 1;
-        for (int lt = 0; lt <= 1 && n < max; lt++)
-            out[n++] = deva_head_char(&m, lt);
+        for (int l = DEVA_LAYER_SEMIVOWEL; l <= DEVA_LAYER_SIBILANT && n < max; l++) {
+            m.nonVargaLayer = l;
+            out[n++] = deva_head_char(&m);
+        }
         return n;
     }
     for (int r = 0; r < 10 && n < max; r++) {
@@ -1260,9 +1262,9 @@ static int row_indicator(int row, int p, uint16_t *ind, uint16_t *markp)
            ★★**latch なので「押している間」ではなく状態として残る** ——
              だから、ここに出ていないと**次に何が出るか分からない**。
              韓国語の行や日本語の「あ」より、この席では効きが大きい。
-           ★印は付けない —— 層（L3）は 1 子音で自動 OFF、LT は押している間だけで、
-             どちらも「解除するまで残る」たぐいの状態ではない。 */
-        ind[0] = deva_head_char(&dvm, (p & BTN_L2) != 0);
+           ★印は付けない —— ★★**層そのものが頭の字に出る**（य = 半母音の層 /
+             श = 摩擦音の層）ので、別に印を足すと同じことを二度言うことになる。 */
+        ind[0] = deva_head_char(&dvm);
         ilen = 1;
     } else if (seat == SEAT_EN) {
         ilen = gp_row_chars_en(row, ind, 4);
@@ -1308,7 +1310,10 @@ static int apply_frame(int p, const uint8_t axes[4], int fields, int *rowp)
         /* ★デーヴァナーガリー（別の入口）。かなの状態機械（gm）は動かさない。 */
         if (step_deva_frame(p, axes, rs, fields))
             dirty = 1;
-        row = dvm.lsLatch * 4 + dvm.nonVarga * 2 + ((p & BTN_L2) != 0);
+        /* ★★**L2 はもう混ぜない** —— 層は L3 の巡回で決まるので、インジケータの
+           中身は latch と層だけで決まる（L2 を入れると、何も変わらないのに
+           描き直す ＝ 嘘の変化になる）。 */
+        row = dvm.lsLatch * 3 + dvm.nonVargaLayer;
     } else {
         /* かな（同時押し）*/
         GpFrameKana f = frame_of(p, fields * 17);
@@ -1604,14 +1609,15 @@ static int help_alphabet(uint16_t *out, int max)
         for (int d = 0; d <= 4; d++) {         /* 組 5 つ × その中の 5 つ */
             m.lsLatch = d;
             for (int i = 0; i < 5 && n < max; i++)
-                if (deva_stop_char(&m, 0, i))
-                    out[n++] = deva_stop_char(&m, 0, i);
+                if (deva_stop_char(&m, i))
+                    out[n++] = deva_stop_char(&m, i);
         }
-        m.nonVarga = 1;                        /* 非 varga 層（L3）の 4+4 */
-        for (int lt = 0; lt <= 1; lt++)
+        for (int l = DEVA_LAYER_SEMIVOWEL; l <= DEVA_LAYER_SIBILANT; l++) {
+            m.nonVargaLayer = l;               /* 非 varga 層（L3 の巡回）の 4+4 */
             for (int i = 0; i < 4 && n < max; i++)
-                if (deva_stop_char(&m, lt, i))
-                    out[n++] = deva_stop_char(&m, lt, i);
+                if (deva_stop_char(&m, i))
+                    out[n++] = deva_stop_char(&m, i);
+        }
         for (int lt = 0; lt <= 1; lt++)        /* 母音（独立形） */
             for (int v = 0; v < 5 && n < max; v++)
                 if (deva_vowel_char(v, lt))
@@ -1760,8 +1766,15 @@ static void help_grid_x(int *cx)
         total += w[c];
     }
     int gap = (TEXT_W - total) / (UI_STK_COLS - 1);
-    if (gap < 8)
+    if (gap < 8) {
         gap = 8;                       /* ★詰まりきったら諦める（端が切れるだけ） */
+        /* ★★**黙らずに言う**（`help_put_u8` / `help_shoulder` と同じ扱い）——
+           端が切れるだけなので絵を撮っても気づけず、★uicheck.sh が拾えるのは
+           **stderr に出したものだけ**だった。表の列を足したときにここが無いと、
+           「収まっている」という緑が嘘になる。 */
+        fprintf(stderr, "help: 表がはみ出している（%d px > %d）: seat=%d\n",
+                total + 8 * (UI_STK_COLS - 1), TEXT_W, seat);
+    }
     int x = MARGIN;
     for (int c = 0; c < UI_STK_COLS; c++) {
         cx[c] = x + w[c] / 2;
@@ -1840,7 +1853,11 @@ static void help_draw_kana(int p)
 
 /* ヒンディー語。★左群は**いま latch している組の中の 4 つ**（十字 ↑→↓←）で、
    ★**中央は空** —— 十字を押さないと子音は出ない（かなの席と違うところ）。
-   その代わり L1 の札が動く = その組の鼻音（ङ ञ ण न म）。 */
+   その代わり L1 の札が動く = その組の鼻音（ङ ञ ण न म）。
+   ★★**L3 を押すと左群が層ごと替わる**（य र ल व → श ष स ह → 元の組）——
+     ★出ている字そのものが「いまどちらの層か」の表示なので、印は足さない。
+     ★**L2 は左群に効かない**（層の選択から外れた）—— L2 が動かすのは
+     右群（母音）と肩の札（nukta / visarga）だけ。 */
 static void help_draw_deva(int p, const DevaMachine *hm)
 {
     const UiText *u = &UI[ui_lang];
@@ -1854,7 +1871,7 @@ static void help_draw_deva(int p, const DevaMachine *hm)
        ★字は窓から引く（`deva_mark_char`）—— 図が字を持つと、合成器を直したときに
          **図だけ古くなる**。 */
     fill_rows(hbar, 0, BASE, OPT_BG);                  /* ★外側が 1、内側が 2 */
-    help_shoulder(HLX, u->l1[seat], deva_stop_char(hm, lt, 4), (p & BTN_L1) != 0,
+    help_shoulder(HLX, u->l1[seat], deva_stop_char(hm, 4), (p & BTN_L1) != 0,
                        u->l2[seat], 0, lt);
     help_shoulder(HRX, u->r2[seat],
                        deva_mark_char(lt ? DEVA_MARK_VISARGA : DEVA_MARK_HALANT),
@@ -1865,19 +1882,19 @@ static void help_draw_deva(int p, const DevaMachine *hm)
     help_band(HY_SHOULDER, 1);
 
     fill_rows(hbar, 0, BASE, OPT_BG);
-    help_put1(HLX, deva_stop_char(hm, lt, 0), INK, dpad == 0);
+    help_put1(HLX, deva_stop_char(hm, 0), INK, dpad == 0);
     help_put1(HRX, deva_vowel_char(2, lt), INK, vowel == 2);
     help_band(HY0, 1);
 
     fill_rows(hbar, 0, BASE, OPT_BG);
-    help_put1(HLX - HDX, deva_stop_char(hm, lt, 3), INK, dpad == 3);
-    help_put1(HLX + HDX, deva_stop_char(hm, lt, 1), INK, dpad == 1);
+    help_put1(HLX - HDX, deva_stop_char(hm, 3), INK, dpad == 3);
+    help_put1(HLX + HDX, deva_stop_char(hm, 1), INK, dpad == 1);
     help_put1(HRX - HDX, deva_vowel_char(1, lt), INK, vowel == 1);
     help_put1(HRX + HDX, deva_vowel_char(3, lt), INK, vowel == 3);
     help_band(HY1, 1);
 
     fill_rows(hbar, 0, BASE, OPT_BG);
-    help_put1(HLX, deva_stop_char(hm, lt, 2), INK, dpad == 2);
+    help_put1(HLX, deva_stop_char(hm, 2), INK, dpad == 2);
     help_put1(HRX, deva_vowel_char(4, lt), INK, vowel == 4);
     help_band(HY2, 1);
 }
@@ -2085,8 +2102,9 @@ static void help_open(void)
     int pp = pad_read_ex(axes);
     if (pp < 0)
         pp = 0;
-    int row = seat == SEAT_HI ? dvm.lsLatch * 4 + dvm.nonVarga * 2 + ((pp & BTN_L2) != 0)
-                              : pad_row(pp);
+    /* ★L2 は混ぜない（`interactive` の同じ式の注記）—— 図が L2 で替わるぶんは
+       `p` の側が拾う。 */
+    int row = seat == SEAT_HI ? dvm.lsLatch * 3 + dvm.nonVargaLayer : pad_row(pp);
     help_draw(pp, row);
 
     int prev_p = pp, prev_row = row, fields = 0;

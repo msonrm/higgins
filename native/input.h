@@ -77,9 +77,27 @@ typedef struct {
    ★★**そして latch は「前置シフト」** —— 左手側の出力（D-pad 子音 / LB 鼻音）を
      1 つ出したら中立へ戻る。**モードではない**（gp_step_deva の頭書き）。
    ★rtUsedForCursor: RT は「修飾の入口」で、**何にも使われずに離されたときだけ**
-     halant になる（RT+LS のキャレット移動や RT+L3 の改行に使われたら抑止）。 */
+     halant になる（RT+LS のキャレット移動や RT+L3 の改行に使われたら抑止）。
+   ★nonVargaLayer は真偽ではなく**3 つの層**（下の enum）。 */
+
+/* 非 varga 層。★L3（LS 押し込み）を押すたびに巡回し、子音 1 つで OFF に戻る。
+ *
+ *     OFF ──L3──▶ SEMIVOWEL (य र ल व) ──L3──▶ SIBILANT (श ष स ह) ──L3──▶ OFF
+ *
+ * ★★**時間窓を持たない。** 「素早く 2 回」ではなく「2 回押せば摩擦音」なので、
+ *   打鍵の速さに依存せず、★**実装ごとにずれる定数も増えない**
+ *   （GP_ENG_LONG_PRESS_MS が上流と食い違っている、あの形をここには持ち込まない）。
+ * ★★**LT はこの層に関与しない**（2026-09-06 に外した。上流 GIME の判断）——
+ *   LT の意味は「土着でない音」で揃っている（LT+R1 = nukta / LT+RS↑ = candra /
+ *   LT+✕ = ऋ / LT+RT = visarga）のに、श ष स ह は शहर / समय / है のような
+ *   **日常語の芯**で、そこだけ素性から外れていた。
+ * ★★**どちらの層かは D-pad に出る字そのものが示す** —— だから図にも
+ *   インジケータにも別の印を足さない（同じことを二度言うことになる）。
+ */
+enum { DEVA_LAYER_OFF = 0, DEVA_LAYER_SEMIVOWEL, DEVA_LAYER_SIBILANT };
+
 typedef struct {
-    int lsLatch, nonVarga, rtUsedForCursor;
+    int lsLatch, nonVargaLayer, rtUsedForCursor;
     int prevLsDir, prevDpad, prevLb, prevVowel;
     int prevLT, prevRT, prevL3, prevRsUp, prevRsRight;
 } DevaMachine;
@@ -140,11 +158,13 @@ void gp_sync_prev_deva(DevaMachine *s, const GpFrameDeva *f);
    これを呼ぶ。呼ばないと**離したときに halant が出る**。 */
 void deva_consume_rt(DevaMachine *s);
 /* 行インジケータ用: いま選ばれている varga の見出し字（無気無声）。
-   ★非 varga 層のときはその層の頭を返す。 */
-unsigned short deva_head_char(const DevaMachine *s, int ltNow);
+   ★非 varga 層のときはその層の頭（य / श）を返す。
+   ★★**LT は渡さない** —— 層は L3 の巡回で決まり、state が持っている。 */
+unsigned short deva_head_char(const DevaMachine *s);
 /* 打ち方の図用: いま選ばれている varga の 1 つ（idx 0..3 = D-pad ↑→↓← / 4 = LB の鼻音）。
-   ★非 varga 層には鼻音の席が無いので idx 4 は 0 を返す。0 = そこは空。 */
-unsigned short deva_stop_char(const DevaMachine *s, int ltNow, int idx);
+   ★非 varga 層には鼻音の席が無いので idx 4 は 0 を返す。0 = そこは空。
+   ★★**LT は渡さない**（deva_head_char と同じ）。 */
+unsigned short deva_stop_char(const DevaMachine *s, int idx);
 /* 打ち方の図用: 面ボタンの母音（独立形。0 = そのボタンに母音は無い）。
    ★**独立形を出す** —— matra（`ि`）は単体だと点にしか見えず、図の札にならない。 */
 unsigned short deva_vowel_char(int vowel, int ltNow);
