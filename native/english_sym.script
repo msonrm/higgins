@@ -9,6 +9,8 @@
 #   ZENMAI_STOP=490  → ★3 回目 = `,`
 #   ZENMAI_STOP=678  → ★`It's,/01`
 #   ZENMAI_STOP=858  → ★`It's,/01OK` —— ▲ CapsLock
+20-45:SEL     # ★英語の席へは **Select 3 回**（日 → 韓 → ヒ → 英）——
+60-85:SEL     #   席の並びが 英 → 日 → 韓 → ヒンディー なので（台本は ja から始まる）
 100-130:SEL   # 英語へ
 160-168:L2   # ★単押し（8 field ≒ 136ms）= ⇧ 1 字だけ
 198-228:RIGHT+CIR   # i
