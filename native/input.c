@@ -485,19 +485,24 @@ static int varga_of(int lsDir)
     }
 }
 
-unsigned short deva_head_char(const DevaMachine *s, int ltNow)
+unsigned short deva_head_char(const DevaMachine *s)
 {
-    if (s->nonVarga)
-        return ltNow ? DEVA_SIBILANT[0] : DEVA_SEMIVOWEL[0];
+    if (s->nonVargaLayer != DEVA_LAYER_OFF)
+        return s->nonVargaLayer == DEVA_LAYER_SIBILANT ? DEVA_SIBILANT[0]
+                                                       : DEVA_SEMIVOWEL[0];
     return DEVA_VARGA_HEAD[varga_of(s->lsLatch)];
 }
 
-unsigned short deva_stop_char(const DevaMachine *s, int ltNow, int idx)
+unsigned short deva_stop_char(const DevaMachine *s, int idx)
 {
     if (idx < 0 || idx >= DEVA_STOP_N)
         return 0;
-    if (s->nonVarga)                   /* 非 varga 層は 4 つしかない（LB の席が空く） */
-        return idx < 4 ? (ltNow ? DEVA_SIBILANT[idx] : DEVA_SEMIVOWEL[idx]) : 0;
+    if (s->nonVargaLayer != DEVA_LAYER_OFF) {   /* 非 varga 層は 4 つ（LB の席が空く） */
+        if (idx >= 4)
+            return 0;
+        return s->nonVargaLayer == DEVA_LAYER_SIBILANT ? DEVA_SIBILANT[idx]
+                                                       : DEVA_SEMIVOWEL[idx];
+    }
     return DEVA_VARGA[varga_of(s->lsLatch)][idx];
 }
 
@@ -551,7 +556,11 @@ int gp_step_deva(DevaMachine *s, const GpFrameDeva *f, GpAction out[4])
         n = deva_push(out, n, DEVA_OP_COMMIT, 0, 0);
         s->rtUsedForCursor = 1;
     } else if (f->l3Now && !s->prevL3) {
-        s->nonVarga = !s->nonVarga;
+        /* ★★**巡回する**（OFF → 半母音 → 摩擦音 → OFF）。時間窓は持たない ——
+           「素早く 2 回」ではなく「2 回押せば摩擦音」（input.h の頭書き）。 */
+        s->nonVargaLayer = s->nonVargaLayer == DEVA_LAYER_OFF       ? DEVA_LAYER_SEMIVOWEL
+                         : s->nonVargaLayer == DEVA_LAYER_SEMIVOWEL ? DEVA_LAYER_SIBILANT
+                         : DEVA_LAYER_OFF;
         /* ★latch も落とす —— 押し込みながら傾けた方向が次の click まで残る、
            という事故を防ぐ（GIME の注記）。 */
         s->lsLatch = 0;
@@ -566,11 +575,13 @@ int gp_step_deva(DevaMachine *s, const GpFrameDeva *f, GpAction out[4])
     /* --- D-pad: 子音 --- */
     if (f->dpad >= 0 && f->dpad != s->prevDpad) {
         unsigned short c;
-        if (s->nonVarga) {
-            c = f->ltNow ? DEVA_SIBILANT[f->dpad] : DEVA_SEMIVOWEL[f->dpad];
+        if (s->nonVargaLayer != DEVA_LAYER_OFF) {
+            /* ★**層は L3 の巡回で決まっている** —— ここで LT を見ない。 */
+            c = s->nonVargaLayer == DEVA_LAYER_SIBILANT ? DEVA_SIBILANT[f->dpad]
+                                                        : DEVA_SEMIVOWEL[f->dpad];
             /* ★**1 子音で自動 OFF**（one-shot）。連続して非 varga を打つなら
                もう一度 L3 を押す（GIME の実機判断）。 */
-            s->nonVarga = 0;
+            s->nonVargaLayer = DEVA_LAYER_OFF;
         } else {
             c = DEVA_VARGA[varga_of(s->lsLatch)][f->dpad];
         }

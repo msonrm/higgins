@@ -21,7 +21,8 @@ static const unsigned short DEVA_VARGA[DEVA_VARGA_N][DEVA_STOP_N] = {
    ★無気無声（index 0）を代表にする ―― varnamala の頭。 */
 static const unsigned short DEVA_VARGA_HEAD[5] = { 0x0915, 0x091A, 0x091F, 0x0924, 0x092A };
 
-/* 非 varga 層（L3 で入る）。LT 離し = 半母音 / LT 押し = 摩擦音 + ह。
+/* 非 varga 層。★L3 を押すたびに巡回する（OFF → 半母音 → 摩擦音 + ह → OFF）。
+   ★★**LT は層を選ばない**（2026-09-06 に外した ―― LT の意味は「土着でない音」）。
    ★D-pad ↑→↓← が index 0..3。 */
 static const unsigned short DEVA_SEMIVOWEL[4] = { 0x092F, 0x0930, 0x0932, 0x0935 };
 static const unsigned short DEVA_SIBILANT[4]  = { 0x0936, 0x0937, 0x0938, 0x0939 };
