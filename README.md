@@ -45,6 +45,31 @@ silence must never be mistaken for green.
 ちゃんと赤になること**。upstream の検査は成功時に何も出力しないので、
 ★**無言を緑と取り違えない**ようにするため。
 
+### Browser (gamepad only) / ブラウザ版（コントローラ専用）
+
+```sh
+sh wasm/build.sh     # -> wasm/out/higgins.{js,wasm}  (needs emcc)
+sh wasm/dist.sh      # -> wasm/dist/  (static files for Cloudflare Pages etc.)
+make test-wasm       # same 40 scripts as native/shots.sh, compared by md5
+```
+
+The browser build is **the same C as the handheld build**, compiled with Emscripten.
+Only the two pieces that touch the machine are swapped: `wasm/plat_web.c` (canvas +
+Gamepad API, in place of SDL2) and `wasm/hechima_web.c` (calls the separate
+`hechima-wasm` module, in place of `libhechima.so`). It reads **only a game controller**
+— no keyboard, no touch.
+
+ブラウザ版は**ハンドヘルド版と同じ C** を Emscripten で焼いたもの。差し替えたのは
+機械に触る 2 本だけ —— `wasm/plat_web.c`（SDL2 の代わりに canvas と Gamepad API）と
+`wasm/hechima_web.c`（`libhechima.so` の代わりに別モジュールの `hechima-wasm` を呼ぶ）。
+★**読むのはゲームコントローラだけ**（キーボード・タッチは読まない）。
+★`make test-wasm` が台本 40 本で native と**画素まで同じ絵**を出すことを確かめる
+（native の絵はシステムの FreeType の版で変わるので、`make test` には入れていない）。
+
+開発中は、リポジトリの直下を配って `wasm/index.html` を開く
+（例: `python3 -m http.server` → `http://localhost:8000/wasm/`）。
+★Gamepad API は **https か localhost でしか動かない**。
+
 ## Name / 名前について
 
 Henry Higgins is the phonetician who teaches Eliza Doolittle to speak, in Shaw's

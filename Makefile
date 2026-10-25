@@ -7,7 +7,7 @@ CXXFLAGS ?= -std=c++20 -O1 -w
 BUILD     := build
 ELIZA_SRC := vendor/eliza/src/eliza.cpp
 
-.PHONY: all test test-ja test-ja-doctor test-ja-alias test-ja-coverage test-ko-doctor test-ko-coverage test-ko-words test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-ja-ranks test-ko-ranks test-ja-words test-web test-api test-native clean
+.PHONY: all test test-ja test-ja-doctor test-ja-alias test-ja-coverage test-ko-doctor test-ko-coverage test-ko-words test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-ja-ranks test-ko-ranks test-ja-words test-web test-api test-native test-wasm clean
 
 all: $(BUILD)/eliza
 
@@ -265,6 +265,27 @@ test-native:
 # ★★**はみ出しは画面では端が切れるだけ**なので、絵を撮っても気づけない ——
 #   本体が stderr に 1 行出すのを uicheck.sh が拾う。中身は native/uicheck.sh の頭書き。
 # ★同梱フォントが要る（幅はフォント次第）。無ければ**走らなかったと明示して**飛ばす。
+# ★ブラウザ版（wasm/）が native と**同じ絵**を出すかを、台本 40 本の md5 で突き合わせる。
+# ★`make test` には入れない —— native の絵は**システムの FreeType の版**で変わり、wasm は
+#   ポートの FreeType を焼き込むので、版の違う機械では赤くなる（native/shots.sh の頭書きと
+#   同じ理由）。同じ機械で「両方を焼いて比べる」前後の突き合わせとして使う。
+test-wasm:
+	@if ! command -v emcc > /dev/null || ! command -v node > /dev/null; then \
+	    echo 'SKIP: emcc / node が無い'; \
+	elif [ ! -f native/higgins.otf ]; then \
+	    echo 'SKIP: native/higgins.otf が無い（sh native/make_font.sh）'; \
+	else \
+	    mkdir -p $(BUILD); \
+	    sh native/build.sh > /dev/null || { echo 'FAIL: native のビルドが通らない'; exit 1; }; \
+	    sh wasm/build.sh > /dev/null 2>&1 || { echo 'FAIL: wasm のビルドが通らない'; sh wasm/build.sh; exit 1; }; \
+	    sh native/shots.sh > $(BUILD)/shots-native.txt || { echo 'FAIL: native の台本が回らない'; exit 1; }; \
+	    node wasm/shots.mjs > $(BUILD)/shots-wasm.txt || { echo 'FAIL: wasm の台本が回らない'; cat $(BUILD)/shots-wasm.txt; exit 1; }; \
+	    diff -u $(BUILD)/shots-native.txt $(BUILD)/shots-wasm.txt > /dev/null \
+	      || { echo 'FAIL: wasm 版が native と違う絵を出す'; \
+	           diff -u $(BUILD)/shots-native.txt $(BUILD)/shots-wasm.txt | head -20; exit 1; }; \
+	    echo "OK: wasm 版と native 版が同じ絵を出す（台本 $$(wc -l < $(BUILD)/shots-wasm.txt) 本）"; \
+	fi
+
 test-ui:
 	@if ! pkg-config --exists sdl2 freetype2 2>/dev/null; then \
 	    echo 'SKIP: sdl2 / freetype2 が無い（UI の幅は見ていない）'; \

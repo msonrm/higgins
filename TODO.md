@@ -1,5 +1,40 @@
 # TODO
 
+> ★★**現在地（2026-10-25）: ブラウザ版（コントローラ専用）を立てた**（`wasm/`）。
+> ★**native と同じ C を Emscripten で焼いた** —— 差し替えたのは機械に触る 2 本だけ
+> （`plat_sdl.c` → `wasm/plat_web.c` = canvas + Gamepad API / `libhechima.so` →
+> `wasm/hechima_web.c` = 別モジュールの hechima-wasm を JS 越しに同期で呼ぶ）。
+> `main.c`・`input.c`・`render.c`・`conv.c`・ELIZA は 1 行も触っていない。
+> ★★**labo の JS エンジン（Zenmai の Web 版が使っている GamepadEngine）は使わなかった** ——
+> 上流に無い直し（받침のキャンセル・RT の印・シフトの巡回）と、JS 実装の無い
+> デーヴァナーガリーを**全部踏み直すことになる**。[[上流で 1 か所だった判断が、移植で割れて落ちる]]
+> を 4 度目に踏まないための選択。Zenmai から借りたのは配り方（`dist.sh` の畳み方・`.gz` を並べる）だけ。
+> ★★**`make test-wasm` が台本 40 本で native と md5 一致**（node で回す `wasm/shots.mjs`）。
+> 変換（`conv` `resize` `shot`）とデーヴァナーガリー（`deva` `candra` `help_hi`）も込み。
+> ★カナリア: 変換エンジンを外すと `conv` / `resize` が native と割れる（＝台本は変換を見ている）。
+> ★ヘッドレス Chromium に**偽のパッド**を差して通しも見た（起動画面 → 日本語 → こんにちは →
+> 「わたしはさびしい」を左スティックで変換 → 返事 / メニューの「やめる」→「おしまい」の案内）。
+>
+> ★**ここで踏んだ穴 2 つ（どちらも「黙って止まる」形）**:
+> - ★**Asyncify で一度眠ったあとに `main()` が返ると、emscripten は終わりと扱わない** ——
+>   メニューの「やめる」で画面が固まるだけだった。`main.c` を `-Dmain=higgins_main` で焼き、
+>   返ったら `exit()` する薄い `main` を `plat_web.c` に置いた
+> - ★**`EXIT_RUNTIME=0` だと終わり方が 2 通りに割れる**（起動画面で終わる台本は同期で終わり
+>   `callMain` が握りつぶす / 変換を待ったあとは reject で漏れる）。`EXIT_RUNTIME=1` + `onExit` に揃えた
+>
+> ★**残っているもの**:
+> 1. ★★**本物のコントローラで触っていない**（偽のパッドだけ）。とくに Nintendo 系の札の機体・
+>    Switch Pro / Joy-Con がブラウザで "standard" の**位置**どおりに来るか、アナログトリガの値、
+>    スティックのドリフト。★Chrome 以外（Firefox / Safari）も未確認
+> 2. ★**変換の学習がページを閉じると消える**（native は `conf/` に残る）。hechima の worker が
+>    やっている OPFS への保存（`hechima_sync` → `/tmp/*.db`）を写せばよい
+> 3. **公開先**（Cloudflare Pages など）は未定。`sh wasm/dist.sh` で 60MB（`.gz` 込み）
+> 4. ★HarfBuzz のポートが **3.2.0**（実機は 10.2.0）。台本では割れていないが、
+>    デーヴァナーガリーの珍しい合字で差が出るならここ。FreeType は 2.13.3 で実機と同じ
+>
+> ★**Debian の emcc はキャッシュが凍結されている**（`FROZEN_CACHE = True`）ので
+> ポートを作れない。`wasm/build.sh` がユーザー側へ写して凍結を外す（初回だけ 4 分）。
+
 > ★★**現在地（2026-09-06）: 非 varga 層の切替を L2 から「L3 の巡回」に移した**
 > （上流 GIME `dbf0d23` の移植）。`OFF → य र ल व → श ष स ह → OFF`。
 > ★**理由は 2 つとも「割り当ての好み」ではない**: ① 層の中で**シフトの規律が
