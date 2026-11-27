@@ -36,6 +36,8 @@ done
 #   （版ごとに更新されうるので、差し替えのたびに取り直す）。
 cp "$SRC/../../../THIRD_PARTY_NOTICES.md" "$DST/THIRD_PARTY_NOTICES.md" 2>/dev/null \
   || cp "$HOME/development/hechima/THIRD_PARTY_NOTICES.md" "$DST/THIRD_PARTY_NOTICES.md"
+# ★中のパスは hechima の置き方のままなので、Higgins で辿れる形に読み替える（tools/fix_notices.py・2026-11-28）
+python3 "$(dirname "$0")/fix_notices.py" "$DST/THIRD_PARTY_NOTICES.md"
 
 # ★取り込んだ実体の md5 を出す。vendor/VENDOR.md の hechima 節に貼る。
 echo "| ファイル | サイズ | md5 |"

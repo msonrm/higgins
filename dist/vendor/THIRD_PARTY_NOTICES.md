@@ -1,13 +1,16 @@
 # Third-Party Notices
 
-本リポジトリは Mozc に由来するビルド成果物（`site/public/vendor/hechima-wasm/` の
+> この文書は [hechima](https://github.com/msonrm/hechima)（Higgins が日本語入力に使う部品）の通知を写したもの。
+> Higgins では、Mozc 由来の成果物は `vendor/hechima-wasm/` にある。
+
+本リポジトリは Mozc に由来するビルド成果物（`vendor/hechima-wasm/` の
 `hechima-wasm.js` / `hechima-wasm.wasm` と辞書 `mozc.data`）を再配布しています —
 **powered by Mozc**。各構成要素のライセンスと著作権表示を以下に再掲します
-（pin している正確な版は [site/public/vendor/VENDOR.md](site/public/vendor/VENDOR.md) と
-同梱の BUILD_INFO.txt を参照）。
+（pin している正確な版は [hechima の VENDOR.md](https://github.com/msonrm/hechima/blob/main/site/public/vendor/VENDOR.md) を参照。
+Higgins が取り込んだ実体の md5 は [vendor/VENDOR.md](https://github.com/msonrm/higgins/blob/main/vendor/VENDOR.md)）。
 
 自作部分（サイトと、`hechima` / `hechima-keymap` / `flick-engine` / `gamepad-engine` の
-各バンドル）のライセンスは [LICENSE](LICENSE)（MIT、Copyright (c) 2026 msonrm）です。
+各バンドル）のライセンスは [LICENSE](https://github.com/msonrm/hechima/blob/main/LICENSE)（MIT、Copyright (c) 2026 msonrm）です。
 
 ## Mozc（変換エンジン本体・wasm バイナリのコード部分）
 
