@@ -7,7 +7,7 @@ CXXFLAGS ?= -std=c++20 -O1 -w
 BUILD     := build
 ELIZA_SRC := vendor/eliza/src/eliza.cpp
 
-.PHONY: all test test-ja test-ja-doctor test-ja-alias test-ja-coverage test-ko-doctor test-ko-coverage test-ko-words test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-ja-ranks test-ko-ranks test-ja-words test-web test-api test-native clean
+.PHONY: all test test-ja test-ja-doctor test-ja-alias test-ja-coverage test-ko-doctor test-ko-coverage test-ko-words test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-ja-ranks test-ko-ranks test-ja-words test-web test-api test-native test-wasm clean
 
 all: $(BUILD)/eliza
 
@@ -20,7 +20,7 @@ $(BUILD)/eliza: $(ELIZA_SRC)
 #   そこで 2 つ焼いて、両方の結果が揃ってはじめて緑とする:
 #     eliza-count  … 本番と同じロジック + 件数表示   → 「1 件以上あって 0 失敗」
 #     eliza-canary … それにわざと落ちるテストを 1 個 → 「1 失敗」（検査が生きている証拠）
-test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-ja-coverage test-ko-doctor test-ko-coverage test-ko-words test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-ja-words test-ja-ranks test-ko-ranks test-web test-api test-native test-ui
+test: $(BUILD)/eliza-count $(BUILD)/eliza-canary test-ja test-ja-doctor test-ja-alias test-ja-coverage test-ko-doctor test-ko-coverage test-ko-words test-hi-doctor test-hi-coverage test-hi-gender test-hi-ranks test-ja-words test-ja-ranks test-ko-ranks test-web test-api test-native test-par test-ui
 	@printf '\n' | $(BUILD)/eliza-count | grep -qE '[1-9][0-9]* assertions' \
 	  || { echo 'FAIL: テストが 1 件も走っていない'; exit 1; }
 	@printf '\n' | $(BUILD)/eliza-count | grep -q '0 failures' \
@@ -261,10 +261,45 @@ test-native:
 	    echo 'OK: native 版と CLI 版の応答が一致（日本語・韓国語・ヒンディー語）/ 合成も一致（韓国語・デーヴァナーガリー）'; \
 	fi
 
+# ★★**4 言語の対訳**（2026-11-27）—— 同じ 36 文（Weizenbaum の 1966 年の会話例 ＋ 披露で
+#   打ちそうな文）を 4 言語で流し、応答を縛る。★既存のゴールデンは言語ごとに中身が違うので、
+#   「英語では噛み合うのに他の言語では外す」が**比べられなかった**（実際、直した 9 件は
+#   どれも既存のゴールデンを踏んでいなかった）。★英語は原典の CLI、他は native と同じ道。
+#   ★意図した変更なら: native/test_reply [ko|hi] < experiments/par_XX.in > experiments/par_XX.out
+test-par: $(BUILD)/eliza
+	@if [ ! -x native/test_reply ]; then echo 'SKIP: native/test_reply が無い（test-native が焼く）'; exit 0; fi; \
+	ng=0; \
+	$(BUILD)/eliza --nobanner < experiments/par_en.in 2>&1 | grep -v '^$$' | diff -u experiments/par_en.out - > /dev/null || { echo 'FAIL: 対訳（英語）の応答が違う'; ng=1; }; \
+	./native/test_reply < experiments/par_ja.in | diff -u experiments/par_ja.out - > /dev/null || { echo 'FAIL: 対訳（日本語）の応答が違う'; ./native/test_reply < experiments/par_ja.in | diff -u experiments/par_ja.out - | head -20; ng=1; }; \
+	./native/test_reply ko < experiments/par_ko.in | diff -u experiments/par_ko.out - > /dev/null || { echo 'FAIL: 対訳（韓国語）の応答が違う'; ./native/test_reply ko < experiments/par_ko.in | diff -u experiments/par_ko.out - | head -20; ng=1; }; \
+	./native/test_reply hi < experiments/par_hi.in | diff -u experiments/par_hi.out - > /dev/null || { echo 'FAIL: 対訳（ヒンディー語）の応答が違う'; ./native/test_reply hi < experiments/par_hi.in | diff -u experiments/par_hi.out - | head -20; ng=1; }; \
+	[ $$ng = 0 ] && echo 'OK: 4 言語の対訳 36 文とも応答がゴールデンどおり'; exit $$ng
+
 # UI の文言が画面に収まるか（★全 UI 言語 × 全席の総当たり）。
 # ★★**はみ出しは画面では端が切れるだけ**なので、絵を撮っても気づけない ——
 #   本体が stderr に 1 行出すのを uicheck.sh が拾う。中身は native/uicheck.sh の頭書き。
 # ★同梱フォントが要る（幅はフォント次第）。無ければ**走らなかったと明示して**飛ばす。
+# ★ブラウザ版（wasm/）が native と**同じ絵**を出すかを、台本 40 本の md5 で突き合わせる。
+# ★`make test` には入れない —— native の絵は**システムの FreeType の版**で変わり、wasm は
+#   ポートの FreeType を焼き込むので、版の違う機械では赤くなる（native/shots.sh の頭書きと
+#   同じ理由）。同じ機械で「両方を焼いて比べる」前後の突き合わせとして使う。
+test-wasm:
+	@if ! command -v emcc > /dev/null || ! command -v node > /dev/null; then \
+	    echo 'SKIP: emcc / node が無い'; \
+	elif [ ! -f native/higgins.otf ]; then \
+	    echo 'SKIP: native/higgins.otf が無い（sh native/make_font.sh）'; \
+	else \
+	    mkdir -p $(BUILD); \
+	    sh native/build.sh > /dev/null || { echo 'FAIL: native のビルドが通らない'; exit 1; }; \
+	    sh wasm/build.sh > /dev/null 2>&1 || { echo 'FAIL: wasm のビルドが通らない'; sh wasm/build.sh; exit 1; }; \
+	    sh native/shots.sh > $(BUILD)/shots-native.txt || { echo 'FAIL: native の台本が回らない'; exit 1; }; \
+	    node wasm/shots.mjs > $(BUILD)/shots-wasm.txt || { echo 'FAIL: wasm の台本が回らない'; cat $(BUILD)/shots-wasm.txt; exit 1; }; \
+	    diff -u $(BUILD)/shots-native.txt $(BUILD)/shots-wasm.txt > /dev/null \
+	      || { echo 'FAIL: wasm 版が native と違う絵を出す'; \
+	           diff -u $(BUILD)/shots-native.txt $(BUILD)/shots-wasm.txt | head -20; exit 1; }; \
+	    echo "OK: wasm 版と native 版が同じ絵を出す（台本 $$(wc -l < $(BUILD)/shots-wasm.txt) 本）"; \
+	fi
+
 test-ui:
 	@if ! pkg-config --exists sdl2 freetype2 2>/dev/null; then \
 	    echo 'SKIP: sdl2 / freetype2 が無い（UI の幅は見ていない）'; \

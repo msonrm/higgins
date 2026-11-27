@@ -52,3 +52,10 @@ portmaster/higgins.zip
 # ★同梱フォントの実体は追跡しない（make_font.sh が焼く / 取ってくる）
 native/higgins.otf
 native/higgins-deva.ttf
+
+# ブラウザ版（wasm/）の生成物。★out/ は wasm/build.sh、dist/ は wasm/dist.sh が毎回作り直す
+wasm/out/
+wasm/dist/
+# Web 版（DOM で描く・webui/）の生成物。★out/ は webui/build.sh、dist/ は webui/dist.sh が作り直す
+webui/out/
+webui/dist/

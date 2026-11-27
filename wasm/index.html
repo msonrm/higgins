@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Higgins</title>
+<style>
+  :root {
+    --bg: #14120f;        /* 画面の外（ゲームの地色に寄せて暗くする） */
+    --ink: #e8e0d2;
+    --dim: #7d7466;
+    --accent: #c9a86a;
+    --warn: #e0776a;
+  }
+  :root[data-theme="light"] {
+    --bg: #f4efe6; --ink: #1f1b16; --dim: #8a7f70; --accent: #7a5a2f; --warn: #b03a2e;
+  }
+  * { box-sizing: border-box }
+  html, body { height: 100%; margin: 0 }
+  body {
+    background: var(--bg); color: var(--ink);
+    font-family: "Hiragino Sans", "Yu Gothic", "Noto Sans JP", sans-serif;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 8px; padding: 8px 16px; overflow: hidden;
+  }
+  /* ★画面は 640×480 のまま描き、CSS で縦横比を保って拡げる（native の
+     SDL_RenderSetLogicalSize と同じ考え方）。下の 1 行ぶんを引いて収める */
+  #stage { position: relative; width: min(100%, calc((100vh - 64px) * 4 / 3)); aspect-ratio: 4 / 3 }
+  #screen { display: block; width: 100%; height: 100%; background: #000 }
+  #veil {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    text-align: center; white-space: pre-line; line-height: 1.9; padding: 1em;
+    background: rgba(20, 18, 15, 0.82); color: #e8e0d2; font-size: clamp(14px, 2.4vw, 20px);
+  }
+  #veil[hidden] { display: none }
+  #bar {
+    width: min(100%, calc((100vh - 64px) * 4 / 3)); display: flex; gap: 1em; align-items: baseline;
+    font-size: 12px; color: var(--dim); white-space: nowrap; overflow: hidden;
+  }
+  #status { flex: 1; overflow: hidden; text-overflow: ellipsis }
+  #warn { color: var(--warn) }
+  #warn[hidden] { display: none }
+  #bar a, #bar button {
+    color: var(--accent); background: none; border: 0; padding: 0; font: inherit; cursor: pointer;
+    text-decoration: underline;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="screen" width="640" height="480"></canvas>
+  <div id="veil">読み込んでいます…</div>
+</div>
+<div id="bar">
+  <span id="status"></span>
+  <span id="warn" hidden>ボタンの位置が図と違うかもしれません</span>
+  <button id="full" type="button">全画面</button>
+  <a href="licenses/" id="lic">ライセンス</a>
+</div>
+<script>
+  // ★全画面はマウスで押す（ブラウザはコントローラの入力を「人の操作」と認めないので、
+  //   ゲームの中からは全画面にできない）。ゲームの入力ではない
+  document.getElementById('full').onclick = () => {
+    const s = document.getElementById('stage')
+    if (s.requestFullscreen) s.requestFullscreen().catch(() => {})
+  }
+</script>
+<script src="out/higgins.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
