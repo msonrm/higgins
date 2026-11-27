@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Higgins</title>
+<style>
+  /* ★見た目は Zenmai の Web 版（web/index.html）から。紙・明朝・段組み・操作図の造形 */
+  /* ★字の最後の逃げ場は同梱フォント。**unicode-range があるので、要る字が出たときだけ**
+     取りに行く（ハングルの 13MB は、韓国語の字が画面に出るまで読まない） */
+  @font-face { font-family: "Higgins Deva"; src: url("../native/higgins-deva.ttf") format("truetype");
+               unicode-range: U+0900-097F, U+1CD0-1CFF, U+A8E0-A8FF, U+25CC; }
+  @font-face { font-family: "Higgins Hangul"; src: url("../native/higgins.otf") format("opentype");
+               unicode-range: U+1100-11FF, U+3130-318F, U+A960-A97F, U+AC00-D7AF, U+D7B0-D7FF; }
+  :root {
+    --bg: #f4efe6; --panel: #fbf8f2; --ink: #1f1b16; --dim: #8a7f70;
+    --rule: #ded4c3; --accent: #7a5a2f; --warn: #b03a2e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #14120f; --panel: #1e1a16; --ink: #e8e0d2; --dim: #7d7466;
+      --rule: #2f2a24; --accent: #c9a86a; --warn: #e0776a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14120f; --panel: #1e1a16; --ink: #e8e0d2; --dim: #7d7466;
+    --rule: #2f2a24; --accent: #c9a86a; --warn: #e0776a;
+  }
+  * { box-sizing: border-box }
+  html, body { height: 100% }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP",
+                 "Noto Serif KR", "AppleMyungjo", "Batang",
+                 "Noto Serif Devanagari", "Kohinoor Devanagari", "Nirmala UI",
+                 "Higgins Deva", "Higgins Hangul", serif;
+    display: flex; flex-direction: column; line-height: 1.85; overflow: hidden;
+  }
+  .gutter { padding-left: max(1em, calc((100% - 36em) / 2)); padding-right: max(1em, calc((100% - 36em) / 2)) }
+  .edge { padding-left: 1.2em; padding-right: 1.2em }
+  .sans { font-family: ui-sans-serif, system-ui, -apple-system, "Helvetica Neue", Arial, "Higgins Deva", "Higgins Hangul", sans-serif }
+
+  /* ── 起動画面（席を選ぶ）── */
+  #intro {
+    position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center;
+    background: var(--bg); padding: 1.2em;
+  }
+  #intro[hidden] { display: none }
+  body.boot #head, body.boot #screen, body.boot #foot { visibility: hidden }
+  #intro-box {
+    width: 100%; max-width: 30em; max-height: 100%; overflow-y: auto; background: var(--panel);
+    border: 1px solid var(--rule); border-radius: .5em; padding: 1.4em 1.5em 1.2em; line-height: 1.7;
+  }
+  #intro-box p { margin: 0 0 .7em }
+  .intro-title { font-size: 1.7em; font-weight: normal; letter-spacing: .1em; margin: 0; line-height: 1.3 }
+  #intro-box .intro-sub { color: var(--dim); font-size: .9em; letter-spacing: .03em; margin: 0 0 .2em }
+  #intro-box .intro-work-name { font-size: .95em; margin: 0 0 1.1em }
+  #intro-box .intro-dim { color: var(--dim); font-size: .85em; margin: 1em 0 0 }
+  .intro-works { display: flex; flex-direction: column; gap: .5em }
+  .intro-work {
+    display: flex; align-items: baseline; gap: .1em; width: 100%; padding: .5em .8em;
+    text-align: left; font: inherit; line-height: 1.6; background: transparent;
+    border: 1px solid var(--rule); border-radius: .35em; color: var(--ink); cursor: pointer;
+    font-size: 1.1em; letter-spacing: .04em;
+  }
+  .intro-work:hover { border-color: var(--accent) }
+  .intro-work.on { border-color: var(--accent); box-shadow: inset .25em 0 0 var(--accent); padding-left: 1.05em }
+  /* ★`top` は main.js が字の形を測って入れる（上下中央へ寄せる分）*/
+  .intro-work .in { position: relative }
+  #intro-status { color: var(--dim); font-size: .78em; line-height: 1.7; margin: 1.2em 0 0 }
+  #intro-status .warn { color: var(--warn) }
+
+  /* ── ヘッダ ── */
+  #head {
+    flex: 0 0 auto; display: flex; align-items: baseline; gap: 1em;
+    padding-top: .5em; padding-bottom: .5em;
+    background: var(--panel); border-bottom: 1px solid var(--rule);
+    font-size: .82rem; letter-spacing: .04em; color: var(--dim);
+  }
+  #title, #place, #stat { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+  #title { flex: 0 1 auto; min-width: 4em }
+  #title b { color: var(--ink); font-weight: 600 }
+  #place { flex: 1 1 auto; min-width: 0; text-align: right; color: var(--ink); font-size: .95rem }
+  #stat { flex: 0 1 auto; font-size: .75rem }
+  @media (max-width: 46em) { #title .tag { display: none } }
+
+  /* ── 本文 ── */
+  #screen { flex: 1 1 auto; overflow-y: auto; padding-top: 1.3em; padding-bottom: 2em; background: var(--bg) }
+  #screen p { margin: 0 0 .9em; white-space: pre-wrap; overflow-wrap: anywhere; line-break: strict }
+  #screen p.you { color: var(--accent) }
+  #screen p.you::before { content: "> " }
+  #screen hr { border: 0; border-top: 1px solid var(--rule); margin: 1.4em 0 1.2em }
+  #screen p.seat { color: var(--dim); font-size: .8rem; letter-spacing: .1em; margin: 0 0 .4em }
+
+  /* ── フッタ: 入力欄と操作図 ── */
+  #foot {
+    flex: 0 0 auto; position: relative;
+    padding-top: .7em; padding-bottom: max(.9em, env(safe-area-inset-bottom, 0px));
+    background: var(--panel); border-top: 1px solid var(--rule);
+  }
+  #prompt { display: flex; align-items: flex-start; gap: .5em; position: relative }
+  #prompt > span.caret { color: var(--accent); flex: 0 0 auto; line-height: 1.85; padding: .15em 0 }
+  /* ★入力欄は `<input>` ではなく div —— キーボードは読まないので、下線・注目文節・
+     キャレットを自由に描けるほうがよい。★複数行に伸びる（相談文は 1 行に収まらない） */
+  #line {
+    flex: 1 1 auto; min-width: 0; position: relative; min-height: calc(1.85em + .3em);
+    padding: .15em 0; border-bottom: 1px solid var(--accent);
+    white-space: pre-wrap; overflow-wrap: anywhere; line-break: strict;
+    max-height: calc(1.85em * 3 + .3em); overflow-y: auto;
+  }
+  #line .pend { text-decoration: underline; text-decoration-color: var(--dim); text-underline-offset: .25em }
+  #line .focus { text-decoration: underline; text-decoration-thickness: 2px; text-decoration-color: var(--accent);
+                 text-underline-offset: .25em; background: color-mix(in srgb, var(--accent) 14%, transparent) }
+  #caret {
+    position: absolute; width: 2px; background: var(--accent); pointer-events: none;
+    animation: blink 1.1s steps(1) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0 } }
+  #caret[hidden] { display: none }
+
+  /* ★右下の札 = いま選んでいる行（Zenmai の #pad-btn）。シフトの印は札の前 */
+  #pad-btn {
+    flex: 0 0 auto; display: flex; min-width: 2.6em; text-align: center;
+    background: transparent; border: 1px solid var(--rule); border-radius: .3em;
+    color: var(--accent); font: inherit; font-size: 1.05em; line-height: 1.15;
+    padding: .1em .35em; cursor: pointer;
+    min-height: 2.3em; align-items: center; justify-content: center; gap: .2em;
+  }
+  #pad-btn:hover { border-color: var(--accent) }
+  #pad-btn .mark { color: var(--ink); font-size: .8em }
+
+  /* ── 候補窓（入力欄の上に開く）── */
+  #cands {
+    position: absolute; bottom: calc(100% + .4em); z-index: 20; min-width: 6em; max-width: calc(100vw - 2em);
+    background: var(--panel); border: 1px solid var(--accent); border-radius: .3em;
+    padding: .25em 0 .3em; line-height: 1.6; box-shadow: 0 .3em 1.2em rgba(0, 0, 0, .18);
+  }
+  #cands[hidden] { display: none }
+  #cands div.c { padding: .05em .9em; white-space: nowrap }
+  #cands div.c.on { background: var(--accent); color: var(--panel) }
+  #cands hr { border: 0; border-top: 1px solid var(--rule); margin: .2em .5em }
+  #cands .dots { display: flex; justify-content: center; gap: .35em; padding-top: .2em }
+  #cands .dots i { width: .4em; height: .4em; border-radius: 50%; background: var(--rule) }
+  #cands .dots i.on { background: var(--accent) }
+
+  /* ── 操作図（Zenmai の自前の図から。寸法は em 基準 ── #pad の font-size ひとつで伸び縮み）── */
+  #pad { margin: .6em auto 0; font-size: clamp(17px, 5.95vw, 26px) }
+  body.pad-closed #pad { display: none }
+  #pad .gp { display: flex; justify-content: center; align-items: stretch; gap: .5em }
+  #pad .gp-mid {
+    display: flex; flex-direction: column; justify-content: flex-start; align-items: center;
+    padding-top: 2.32em; gap: .25em;
+  }
+  #pad .gp-seat {
+    min-width: 2em; height: 1.5em; border-radius: .3em; padding: 0 .3em;
+    border: 1px solid transparent; color: var(--dim);
+    font-size: .62em; line-height: 1; letter-spacing: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #pad .gp-seat.on { border-color: var(--accent); color: var(--ink) }
+  #pad .gp-side { display: flex; flex-direction: column; align-items: center; gap: .4em }
+  #pad .gp-shoulders { display: flex; gap: .3em }
+  #pad .gp-trigger {
+    min-width: 3.15em; height: 1.62em; border-radius: .3em; background: var(--bg); padding: 0 .35em;
+    display: flex; align-items: center; justify-content: center; white-space: nowrap;
+    font-size: .78em; letter-spacing: -.02em; color: var(--dim); line-height: 1;
+  }
+  #pad .gp-trigger.gp-char { color: var(--ink) }
+  #pad .gp-trigger .gp-c { color: var(--ink); margin-left: .25em }
+  #pad .gp-grid { display: grid; grid-template: repeat(3, 1fr) / repeat(3, 1fr); gap: .3em; margin-top: .3em }
+  #pad .gp-btn {
+    width: 2.04em; height: 2.04em; background: var(--bg);
+    display: flex; flex-direction: column; gap: .04em; align-items: center; justify-content: center;
+    font-size: .78em; line-height: 1; color: var(--ink);
+  }
+  #pad .gp-dpad .gp-btn { border-radius: .25em }
+  #pad .gp-face .gp-btn { border-radius: 50% }
+  #pad .gp-blank { background: transparent }
+  #pad .gp-btn.on, #pad .gp-trigger.on { background: var(--rule) }
+  /* ★札の中身。`top` は main.js がインクを測って入れる（上下中央へ寄せる分）*/
+  #pad .in { position: relative; display: inline-flex; align-items: center; justify-content: center; line-height: 1 }
+  #pad .gp-btn .in { flex-direction: column; gap: .04em }
+  #pad .gp-trigger .in { flex-direction: row; align-items: baseline }
+  #pad .gp-l2 { font-size: .48em; color: inherit; letter-spacing: -.02em; line-height: 1; text-transform: uppercase }
+  #pad-note { margin: .5em 0 0; text-align: center; color: var(--dim); font-size: .78rem; line-height: 1.6 }
+  #pad-note div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+
+  /* ── ダイアログ（メニュー・ライセンス）── */
+  .dlg {
+    position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
+    background: color-mix(in srgb, var(--bg) 82%, transparent); padding: 1.2em;
+  }
+  .dlg[hidden] { display: none }
+  .dlg-box {
+    width: min(30em, 100%); max-height: min(85vh, 44em); overflow-y: auto;
+    background: var(--panel); border: 1px solid var(--rule); border-radius: .5em;
+    padding: 1.1em 1.4em 1.3em; line-height: 1.8;
+  }
+  #menu .dlg-box { width: min(16em, 100%); padding: .8em .8em }
+  .menu-item { padding: .35em .8em; border-radius: .3em; text-align: center; letter-spacing: .06em; cursor: pointer }
+  .menu-item.on { background: var(--accent); color: var(--panel) }
+  .dlg h2 { margin: 0 0 .5em; font-size: 1.05em; font-weight: normal; letter-spacing: .06em }
+  #lic-tbl { width: 100%; border-collapse: collapse; font-size: .88em }
+  #lic-tbl td { padding: .15em 0; vertical-align: baseline; border-top: 1px solid var(--rule) }
+  #lic-tbl td.n { padding-right: 1em }
+  #lic-tbl td.l, #lic-tbl td.w { color: var(--dim); padding-right: 1em; white-space: nowrap }
+  .dlg .note { color: var(--dim); font-size: .8rem; line-height: 1.7; margin: .8em 0 0 }
+  .dlg a { color: var(--accent) }
+
+  /* ── コントローラが無いときの案内 ── */
+  #veil {
+    position: fixed; left: 50%; bottom: 1.2em; transform: translateX(-50%); z-index: 70;
+    background: var(--panel); border: 1px solid var(--warn); border-radius: .4em;
+    padding: .5em 1em; font-size: .85rem; line-height: 1.7; text-align: center; white-space: pre-line;
+    max-width: calc(100vw - 2em);
+  }
+  #veil[hidden] { display: none }
+</style>
+</head>
+<body class="boot">
+  <div id="intro">
+    <div id="intro-box">
+      <h1 class="intro-title" id="boot-title">Higgins</h1>
+      <p class="intro-sub" id="boot-sub"></p>
+      <p class="intro-work-name" id="boot-work"></p>
+      <div class="intro-works" id="boot-seats" role="radiogroup"></div>
+      <p class="intro-dim" id="boot-sel"></p>
+      <p class="intro-dim" id="boot-hint" style="margin-top:.2em"></p>
+      <p id="intro-status" class="sans"></p>
+    </div>
+  </div>
+
+  <div id="head" class="edge">
+    <span id="title"><b>Higgins</b><span class="tag" id="title-tag"></span></span>
+    <span id="place">　</span>
+    <span id="stat" class="sans"></span>
+  </div>
+  <div id="screen" class="gutter" aria-live="polite"></div>
+  <div id="foot">
+    <div id="prompt" class="gutter">
+      <span class="caret">&gt;</span>
+      <div id="line"><span id="caret" hidden></span></div>
+      <button id="pad-btn" type="button" title="いま選んでいる行。押すと操作図を開閉"></button>
+      <div id="cands" hidden></div>
+    </div>
+    <div id="pad"></div>
+    <div id="pad-note" class="gutter"></div>
+  </div>
+
+  <div id="menu" class="dlg" hidden><div class="dlg-box" id="menu-box"></div></div>
+  <div id="lic" class="dlg" hidden>
+    <div class="dlg-box">
+      <h2 id="lic-title"></h2>
+      <table id="lic-tbl" class="sans"></table>
+      <p class="note" id="lic-note"></p>
+    </div>
+  </div>
+  <div id="veil" hidden></div>
+
+  <script src="out/core.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>
